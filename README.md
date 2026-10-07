@@ -1,10 +1,15 @@
-# FingerTracker
+# AirControl
 
-Kézvezérelt **egér + virtuális billentyűzet** webkamerával. A program a
+**Érintés nélküli egér- és billentyűzetvezérlés webkamerával.** A program a
 [MediaPipe](https://developers.google.com/mediapipe) kézdetektorával követi a
 kezed, gesztusokból teljes értékű egérként viselkedik, és egy be/ki kapcsolható
 virtuális billentyűzetet vetít a kameraablakra, amin a kezeddel gépelhetsz.
 Az akciókat a [PyAutoGUI](https://pyautogui.readthedocs.io/) hajtja végre.
+
+> Az egérvezérlés **rendszerszintű**: a kurzor és a kattintások bármelyik
+> alkalmazásban hatnak (böngésző, szövegszerkesztő stb.), nem csak akkor, ha a
+> kameraablak van előtérben. A kameraablak csak vizuális visszajelzés — alapból
+> mindig felül marad, hogy böngészés közben is lásd a kezed.
 
 ## Funkciók
 
@@ -61,7 +66,7 @@ python -c "import mediapipe as mp; print(mp.__version__, hasattr(mp, 'solutions'
 > 3. **Újabb 0.10.x build** (pl. 0.10.3x), ahol az `mp.solutions` már nem
 >    töltődik be automatikusan a sima `import mediapipe as mp`-vel.
 >
-> A `finger_tracker.py` a 3. esetet kezeli: ha az `mp.solutions` nem elérhető,
+> A `aircontrol.py` a 3. esetet kezeli: ha az `mp.solutions` nem elérhető,
 > explicit `import mediapipe.python.solutions.hands` úton tölti be. Gyors teszt:
 >
 > ```bash
@@ -76,17 +81,31 @@ python -c "import mediapipe as mp; print(mp.__version__, hasattr(mp, 'solutions'
 > # -> 0.10.21 True
 > ```
 
-### macOS engedélyek (M1/M2 is)
+### macOS engedélyek (M1/M2 is) — FONTOS
 
 - **Kamera**: első futtatáskor a rendszer engedélyt kér.
-- **Kisegítő lehetőségek**: a PyAutoGUI csak akkor tudja mozgatni a kurzort, ha
-  a Terminál/iTerm engedélyt kap itt: Rendszerbeállítások → Adatvédelem és
-  biztonság → Kisegítő lehetőségek.
+- **Kisegítő lehetőségek (Accessibility)**: e **nélkül a kurzor csak a saját
+  ablakunkban tűnik mozogni**, böngészőben/más appban némán nem hat. Ez a
+  leggyakoribb ok, ha "csak akkor működik, ha a kameraablak van felül".
+
+**Hogyan engedélyezd (ez oldja meg a böngészős működést):**
+
+1. Rendszerbeállítások → **Adatvédelem és biztonság** → **Kisegítő lehetőségek**.
+2. Kapcsold **BE** azt az alkalmazást, amelyikből indítod az AirControl-t:
+   - ha Terminálból indítod → **Terminal**
+   - ha iTerm2-ből → **iTerm**
+   - ha VS Code beépített termináljából → **Code** (Visual Studio Code)
+3. **Indítsd újra** az AirControl-t (sőt, néha az egész terminált), hogy az új
+   engedély életbe lépjen.
+
+Az AirControl induláskor **önellenőrzést** futtat: ha nem tudja mozgatni az
+egeret, kiír egy figyelmeztetést a fenti teendővel. Ha ezt látod, a 2–3. lépés
+hiányzik.
 
 ## Használat
 
 ```bash
-python finger_tracker.py
+python aircontrol.py
 ```
 
 Mutasd a kezed a kamerának, és használd a fenti gesztusokat. A kameraablakon
@@ -106,16 +125,23 @@ Kilépés: `q` vagy `ESC`.
 ### Parancssori opciók
 
 ```bash
-python finger_tracker.py --camera 1      # adott kamera index használata
-python finger_tracker.py --hand Any      # bármelyik kéz vezérelhet
-python finger_tracker.py --hand Left     # a bal kéz kövesse
-python finger_tracker.py --keyboard      # billentyűzet indításkor bekapcsolva
+python aircontrol.py --camera 1      # adott kamera index használata
+python aircontrol.py --hand Any      # bármelyik kéz vezérelhet
+python aircontrol.py --hand Left     # a bal kéz kövesse
+python aircontrol.py --keyboard      # billentyűzet indításkor bekapcsolva
 ```
 
 - `--camera N`: ha nem adod meg, a program automatikusan végigpróbálja a 0..5
   indexeket, és az első **nem fekete** képet adó kamerát használja.
 - `--hand`: `Right` (alap), `Left` vagy `Any`.
 - `--keyboard`: a virtuális billentyűzet már indításkor bekapcsolva.
+- `--no-topmost`: ne tartsa a kameraablakot mindig felül (alapból felül marad).
+
+> **Megjegyzés a billentyűkről (`m`, `k`, `q`):** ezek csak akkor jutnak be, ha
+> **az AirControl kameraablaka van fókuszban** (ez OpenCV-korlát). Maga az
+> **egérvezérlés viszont fókusztól függetlenül, rendszerszinten működik** — tehát
+> böngészőben is mozog a kurzor és kattint, akkor is, ha nem a kameraablak aktív.
+> Ha a módokat kapcsolgatni akarod, előbb kattints a kameraablakra.
 
 ### macOS: fekete a kamerakép?
 
@@ -124,7 +150,7 @@ Ha a kameraablak fekete, és a logban `Continuity Camera` szerepel, a macOS az
 
 - Kapcsold ki az iPhone-t kameraként (iPhone: Beállítások → Általános → AirPlay
   és Folytonosság → Folytonossági kamera KI), **vagy**
-- add meg kézzel a beépített kamerát, pl. `python finger_tracker.py --camera 1`.
+- add meg kézzel a beépített kamerát, pl. `python aircontrol.py --camera 1`.
 
 Az automatikus keresés a fekete képet adó kamerákat kihagyja, de a kézi index
 mindig a legbiztosabb.
@@ -133,13 +159,13 @@ mindig a legbiztosabb.
 
 | Fájl | Szerep |
 |---|---|
-| `finger_tracker.py` | Fő program: kamera, fő ciklus, HUD, billentyűzetkapcsolók. |
+| `aircontrol.py` | Fő program: kamera, fő ciklus, HUD, billentyűzetkapcsolók. |
 | `gestures.py` | Kéz-landmarkokból gesztusfelismerés (tiszta logika). |
 | `mouse_controller.py` | Gesztus → egérakció (mozgatás, kattintás, görgetés, drag). |
 | `virtual_keyboard.py` | A kivetített virtuális billentyűzet. |
 | `test_gestures.py` | Offline tesztek a gesztuslogikára (kamera nélkül). |
 
-## Hangolható paraméterek (`finger_tracker.py` tetején)
+## Hangolható paraméterek (`aircontrol.py` tetején)
 
 | Paraméter | Jelentés |
 |---|---|

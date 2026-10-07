@@ -1,10 +1,18 @@
 """
-FingerTracker — kézvezérelt egér + virtuális billentyűzet
-==========================================================
+AirControl — érintés nélküli egér- és billentyűzetvezérlés webkamerával
+=======================================================================
 
 A webkamera képéből MediaPipe-pal követi a kezed, és egy teljes értékű,
 gesztus-alapú egérként viselkedik. Emellett egy be/ki kapcsolható virtuális
 billentyűzetet is kivetít a kameraablakra, amin a kezeddel tudsz gépelni.
+
+Az egérvezérlés RENDSZERSZINTŰ: a kurzor és a kattintások bármelyik
+alkalmazásban hatnak (böngésző, szövegszerkesztő stb.), nem csak akkor, ha a
+kameraablak van előtérben. A kameraablak csak vizuális visszajelzés.
+
+macOS: a rendszerszintű egérvezérléshez a terminálodnak "Kisegítő lehetőségek"
+(Accessibility) engedély kell — lásd a README-t. Enélkül a kurzor csak a saját
+ablakunkban tűnik működőnek, más appban némán nem hat.
 
 Gesztusok (alap: a jobb kéz vezérel; lásd --hand):
   - Csak a MUTATÓUJJ fent ............. kurzor mozgatása
@@ -96,6 +104,52 @@ def _is_frame_usable(frame) -> bool:
     return float(frame.mean()) > 5.0
 
 
+def _warn_if_mouse_control_blocked() -> None:
+    """Ellenőrzi, hogy a PyAutoGUI tényleg tudja-e mozgatni a kurzort.
+
+    macOS-en szintetikus egérmozgatáshoz a terminálnak "Kisegítő lehetőségek"
+    (System Settings -> Privacy & Security -> Accessibility) engedély kell.
+    Ha ez hiányzik, a moveTo "lefut", de a kurzor nem mozdul rendszerszinten,
+    és a felhasználó azt hiszi, csak a saját ablakban működik a vezérlés.
+
+    Nem végzetes: csak figyelmeztetünk, mert más platformon ez nem probléma.
+    """
+    try:
+        start = pyautogui.position()
+        # Pici, azonnal visszavont teszt-mozgatás a jelenlegi pozícióhoz képest.
+        pyautogui.moveTo(start[0] + 2, start[1] + 2, _pause=False)
+        moved = pyautogui.position()
+        pyautogui.moveTo(start[0], start[1], _pause=False)
+        if abs(moved[0] - (start[0] + 2)) > 1 or abs(moved[1] - (start[1] + 2)) > 1:
+            print(
+                "\n[AirControl] FIGYELEM: a rendszer blokkolja az egérmozgatást.\n"
+                "  macOS-en engedélyezd a terminálodnak (vagy iTerm/VS Code):\n"
+                "  Rendszerbeállítások -> Adatvédelem és biztonság ->\n"
+                "  Kisegítő lehetőségek -> kapcsold BE az alkalmazást, majd\n"
+                "  indítsd újra az AirControl-t. Enélkül a kurzor csak a saját\n"
+                "  ablakunkban tűnik működőnek, böngészőben/más appban nem.\n"
+            )
+    except Exception:
+        # Platformtól függően a pozíció-lekérdezés sem mindig megy; ne akassza
+        # meg az indulást.
+        pass
+
+
+def _apply_window_topmost(window_name: str, topmost: bool) -> None:
+    """A kameraablakot (ha a backend támogatja) mindig felülre teszi.
+
+    Így böngészés közben is látod a kezed visszajelzését anélkül, hogy
+    vissza kellene váltanod a kameraablakra. Nem minden OpenCV-backend
+    támogatja; ilyenkor csendben kihagyjuk.
+    """
+    try:
+        prop = getattr(cv2, "WND_PROP_TOPMOST", None)
+        if prop is not None:
+            cv2.setWindowProperty(window_name, prop, 1.0 if topmost else 0.0)
+    except Exception:
+        pass
+
+
 def _open_camera(preferred: int | None):
     """Használható (nem fekete) webkamera megnyitása 0..5 indexek között."""
     candidates = [preferred] if preferred is not None else list(range(6))
@@ -112,7 +166,7 @@ def _open_camera(preferred: int | None):
                 break
             time.sleep(0.05)
         if usable:
-            print(f"[FingerTracker] Kamera megnyitva, index={idx}")
+            print(f"[AirControl] Kamera megnyitva, index={idx}")
             return cap, idx
         cap.release()
     return None, None
@@ -120,7 +174,8 @@ def _open_camera(preferred: int | None):
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Kézvezérelt egér + virtuális billentyűzet."
+        prog="AirControl",
+        description="AirControl — érintés nélküli egér- és billentyűzetvezérlés.",
     )
     parser.add_argument("--camera", type=int, default=None,
                         help="Kamera index (alapból automatikus keresés 0..5).")
@@ -129,11 +184,18 @@ def main() -> None:
                         help='Melyik kezet kövesse (alap: "%(default)s").')
     parser.add_argument("--keyboard", action="store_true",
                         help="A virtuális billentyűzet indításkor bekapcsolva.")
+    parser.add_argument("--no-topmost", action="store_true",
+                        help="Ne tartsa a kameraablakot mindig felül.")
     args = parser.parse_args()
 
     pyautogui.FAILSAFE = True
     pyautogui.PAUSE = 0.0
     screen_w, screen_h = pyautogui.size()
+
+    # Önteszt: tud-e a PyAutoGUI tényleg egeret mozgatni? Ha nem, az szinte
+    # biztosan a macOS "Kisegítő lehetőségek" engedély hiánya. Korán jelezzük,
+    # hogy ne tűnjön úgy, mintha "csak a saját ablakban" működne a vezérlés.
+    _warn_if_mouse_control_blocked()
 
     mp_hands, mp_draw = _load_mediapipe_solutions()
 
@@ -162,6 +224,10 @@ def main() -> None:
     if args.keyboard:
         keyboard.toggle()
     mouse_enabled = True
+
+    window_name = "AirControl"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    _apply_window_topmost(window_name, topmost=not args.no_topmost)
 
     with mp_hands.Hands(
         static_image_mode=False,
@@ -243,7 +309,11 @@ def main() -> None:
 
             _draw_hud(frame, status, keyboard.enabled, mouse_enabled)
 
-            cv2.imshow("FingerTracker", frame)
+            cv2.imshow(window_name, frame)
+            # A topmost tulajdonságot minden képkockán megerősítjük, mert néhány
+            # platformon az ablak elvesztheti az "always on top" állapotot.
+            _apply_window_topmost(window_name, topmost=not args.no_topmost)
+
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q") or key == 27:
                 break
@@ -262,11 +332,16 @@ def _draw_hud(frame, status: str, kb_on: bool, mouse_on: bool) -> None:
     cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                 0.7, (255, 255, 0), 2, cv2.LINE_AA)
 
-    kb_txt = "BE" if kb_on else "KI"
     ms_txt = "BE" if mouse_on else "KI"
-    hud = f"[k] Billentyuzet: {kb_txt}   [m] Eger: {ms_txt}   [q/ESC] Kilepes"
+    hud = f"AirControl  |  [m] Eger: {ms_txt}   [k] Billentyuzet   [q/ESC] Kilepes"
     cv2.putText(frame, hud, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX,
-                0.55, (200, 200, 200), 1, cv2.LINE_AA)
+                0.5, (200, 200, 200), 1, cv2.LINE_AA)
+    # A billentyűk (m/k/q) csak akkor jutnak be, ha EZ az ablak van fókuszban.
+    # Az egérvezérlés viszont fókusztól függetlenül, rendszerszinten működik.
+    cv2.putText(frame, "(gombok: kattints eloszor erre az ablakra)",
+                (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX,
+                0.45, (150, 150, 150), 1, cv2.LINE_AA)
+    _ = kb_on  # a billentyűzet-státuszt a HUD már nem írja ki külön
 
 
 if __name__ == "__main__":
