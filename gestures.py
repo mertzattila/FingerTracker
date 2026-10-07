@@ -40,6 +40,7 @@ class Gesture(Enum):
     DRAG = auto()           # ököl (minden ujj behajlítva) -> fogd és vidd
     SWIPE_LEFT = auto()     # gyors balra legyintés nyitott tenyérrel
     SWIPE_RIGHT = auto()    # gyors jobbra legyintés nyitott tenyérrel
+    TOGGLE_KEYBOARD = auto()  # "shaka" (hüvelyk + kisujj) -> billentyűzet be/ki
 
 
 @dataclass
@@ -121,6 +122,14 @@ def classify_gesture(state: HandState) -> Gesture:
     A sorrend számít: a specifikusabb (csippentés) eseteket előbb vizsgáljuk.
     """
     thumb, index, middle, ring, pinky = state.fingers_up
+
+    # "Shaka" / telefon jel: csak a HÜVELYK és a KISUJJ áll, a három középső
+    # ujj behajlítva. Ritka, nem ütközik mással -> ezzel kapcsoljuk a
+    # billentyűzetet (a finger_tracker él-triggerrel kezeli: egy felmutatás =
+    # egy váltás). Így a billentyűzet KÉZZEL kapcsolható, nem a 'k' billentyűvel
+    # (ami csak akkor menne, ha az AirControl ablaka aktív).
+    if thumb and pinky and not index and not middle and not ring:
+        return Gesture.TOGGLE_KEYBOARD
 
     # Csippentések először (ezek felülírják a mozgatást).
     # FONTOS: a bal kattintáshoz a MUTATÓUJJNAK fent kell lennie, különben egy

@@ -71,6 +71,14 @@ def test_right_click():
     ) == Gesture.RIGHT_CLICK
 
 
+def test_toggle_keyboard_shaka():
+    # "Shaka": hüvelyk + kisujj fent, a három középső ujj behajlítva.
+    hand = _build(index_up=False, middle_up=False, ring_up=False, pinky_up=True)
+    # Hüvelyket kinyitjuk (Right kézen x < index_mcp.x).
+    hand.landmark[4] = _LM(0.30, 1.0 - hand.landmark[4].y)
+    assert _classify(hand) == Gesture.TOGGLE_KEYBOARD
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

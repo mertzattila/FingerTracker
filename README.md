@@ -23,6 +23,7 @@ Az akciókat a [PyAutoGUI](https://pyautogui.readthedocs.io/) hajtja végre.
 | **Mutató + középső** együtt fent | függőleges görgetés (a kéz fel/le mozgása) |
 | **Ököl** (minden ujj behajlítva) | fogd és vidd (drag): mozgasd, majd nyisd ki a kezed az elengedéshez |
 | Gyors **legyintés** nyitott tenyérrel | oldallapozás (balra/jobbra nyílbillentyű) |
+| **"Shaka"** (hüvelyk + kisujj fent) 🤙 | virtuális billentyűzet be/ki |
 
 **Virtuális billentyűzet (külön, mozgatható ablak)**
 
@@ -131,10 +132,18 @@ megtartja a fókuszt, és a leütések oda kerülnek.
 
 1. **Kattints a célmezőbe** egérmódban (kézzel: csippentés = kattintás), vagy
    egyszerűen a trackpaddel — pl. böngésző keresőmező.
-2. Nyomd meg a `k`-t → megnyílik a billentyűzet-ablak. (macOS-en a fókuszt
-   automatikusan visszaadjuk a célmezőnek egy AppleScript hívással.)
+2. Kapcsold be a billentyűzetet a **"shaka" gesztussal**: hüvelyk + kisujj
+   fent, a három középső ujj behajlítva (mint a 🤙 "telefon" jel). Ez
+   bárhonnan működik — **nem** kell hozzá, hogy az AirControl ablaka aktív
+   legyen (ezért nem a `k` billentyűt használjuk, az a célmezőbe gépelne). A
+   gesztus megismétlése kikapcsolja. (macOS-en a fókuszt a megnyitáskor
+   automatikusan visszaadjuk a célmezőnek.)
 3. **Mozgasd a kezed** a billentyűzeten (a zöld jelölő követi), és a kívánt
    gombnál **csippents** (hüvelyk + mutató). A betű a célmezőbe kerül.
+
+> A `k` billentyű is kapcsol, de **csak akkor**, ha az AirControl kameraablaka
+> az aktív ablak. A **"shaka" gesztus a megbízható mód**, mert közben a
+> célmezőben maradhatsz.
 
 > A billentyűzet-ablakot a címsoránál fogva **mozgathatod**, a sarkánál
 > **átméretezheted** (pl. a böngésző mellé). Mivel a célzás a kezedhez van

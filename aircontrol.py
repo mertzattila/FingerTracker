@@ -21,16 +21,22 @@ Gesztusok (alap: a jobb kéz vezérel; lásd --hand):
   - MUTATÓ + KÖZÉPSŐ együtt fent ...... függőleges görgetés (a kéz fel/le)
   - ÖKÖL (minden ujj behajlítva) ...... fogd és vidd (drag): mozgasd, majd nyisd
   - Gyors LEGYINTÉS nyitott tenyérrel .. oldallapozás (balra/jobbra nyíl)
+  - "SHAKA" (HÜVELYK + KISUJJ fent) .... virtuális billentyűzet BE/KI
 
-Billentyűk a kameraablakon:
-  - 'k' .... virtuális billentyűzet be/ki (KÜLÖN, mozgatható/méretezhető ablak)
-  - 'm' .... egérvezérlés be/ki (ha csak gépelni akarsz)
+Billentyűzet KÉZZEL kapcsolása: a "shaka" gesztussal (hüvelyk + kisujj fent, a
+három középső ujj behajlítva). Ez azért kell, mert a 'k' billentyű csak akkor
+működne, ha az AirControl ablaka az aktív — de te épp a célmezőben vagy. A
+"shaka" bárhonnan működik.
+
+Billentyűk a kameraablakon (csak ha EZ az ablak aktív):
+  - 'k' .... billentyűzet be/ki (alternatíva a "shaka" gesztus mellett)
+  - 'm' .... egérvezérlés be/ki
   - 'q' / ESC .... kilépés
 
-Virtuális billentyűzet: a 'k'-val megnyílik egy ÖNÁLLÓ ablak, amit a képernyőn
-bárhova húzhatsz és átméretezhetsz (pl. a böngésző mellé). A kezeddel (egérmód)
-ráviszed a kurzort egy gombra, és egy hüvelyk-mutató CSIPPENTÉSSEL leütöd. A
-leütés az éppen fókuszban lévő alkalmazásba kerül.
+Virtuális billentyűzet: külön, mozgatható/méretezhető ablak. Amíg be van
+kapcsolva, az egér SZÜNETEL, és a KEZED mozgat egy jelölőt a billentyűzeten;
+csippentésre leüti az ott lévő gombot (a fókuszban lévő appba). Nincs kattintás
+-> a célmező fókusza megmarad.
 """
 
 from __future__ import annotations
@@ -221,6 +227,8 @@ def main() -> None:
     last_swipe_time = 0.0
     prev_index_x: float | None = None
     prev_time = time.time()
+    toggle_active = False       # a "shaka" gesztus él-triggeréhez
+    last_toggle_time = 0.0
 
     keyboard = VirtualKeyboard()
     if args.keyboard:
@@ -271,6 +279,24 @@ def main() -> None:
                     ix = int(state.index_x * w)
                     iy = int(state.index_y * h)
                     pointer_px = (ix, iy)
+
+                    # --- Billentyűzet KÉZZEL kapcsolása ("shaka" gesztus) ---
+                    # Él-trigger: egy felmutatás = egy váltás. Így NEM a 'k'
+                    # billentyűvel kell kapcsolni (ami csak akkor menne, ha az
+                    # AirControl ablaka aktív — de te épp a célmezőben vagy).
+                    if gesture == Gesture.TOGGLE_KEYBOARD:
+                        if not toggle_active and (now - last_toggle_time) > 1.0:
+                            keyboard.toggle()
+                            toggle_active = True
+                            last_toggle_time = now
+                        # A "shaka" nem egér/billentyű művelet, ne essünk tovább.
+                        mp_draw.draw_landmarks(frame, landmarks,
+                                               mp_hands.HAND_CONNECTIONS)
+                        cv2.circle(frame, (ix, iy), 9, (255, 0, 255), cv2.FILLED)
+                        status = f"{label}: BILLENTYUZET VALTAS"
+                        break
+                    else:
+                        toggle_active = False
 
                     # Swipe (legyintés) felismerés nyitott tenyérnél.
                     if prev_index_x is not None and state.num_fingers_up >= 4:
@@ -344,8 +370,8 @@ def _draw_hud(frame, status: str, kb_on: bool, mouse_on: bool) -> None:
 
     ms_txt = "BE" if mouse_on else "KI"
     kb_txt = "BE" if kb_on else "KI"
-    hud = (f"AirControl  |  [m] Eger: {ms_txt}   [k] Billentyuzet: {kb_txt}"
-           f"   [q/ESC] Kilepes")
+    hud = (f"AirControl  |  Eger: {ms_txt}   Billentyuzet: {kb_txt}"
+           f"   | 'shaka' (huvelyk+kisujj) = billentyuzet valtas")
     cv2.putText(frame, hud, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX,
                 0.5, (200, 200, 200), 1, cv2.LINE_AA)
 
