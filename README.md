@@ -38,13 +38,27 @@ python -c "import mediapipe as mp; print(mp.__version__, hasattr(mp, 'solutions'
 ```
 
 > **Gyakori hiba — `AttributeError: module 'mediapipe' has no attribute 'solutions'`**
-> Ezt szinte mindig két dolog okozza:
-> 1. **Túl új Python** (3.13/3.14) — hozz létre venv-et Python 3.11-gyel.
+> Három lehetséges ok:
+> 1. **Túl új Python** (3.13/3.14) — hozz létre venv-et Python 3.11/3.12-vel.
 > 2. **Rossz csomag** — a PyPI-n létezik egy azonos nevű `mediapipe` **1.x**
 >    csomag, ami NEM a Google MediaPipe és nincs benne a `solutions` API.
->    A `requirements.txt` ezért `>=0.10.14,<0.11`-re pinneli a verziót.
->    Ha már feltelepült a rossz verzió:
->    `pip uninstall -y mediapipe && pip install "mediapipe>=0.10.14,<0.11"`.
+> 3. **Újabb 0.10.x build** (pl. 0.10.3x), ahol az `mp.solutions` már nem
+>    töltődik be automatikusan a sima `import mediapipe as mp`-vel.
+>
+> A `finger_tracker.py` a 3. esetet kezeli: ha az `mp.solutions` nem elérhető,
+> explicit `import mediapipe.python.solutions.hands` úton tölti be. Gyors teszt:
+>
+> ```bash
+> python -c "import mediapipe.python.solutions.hands as h; print('OK', h.Hands)"
+> ```
+>
+> Ha ez is hibázik, válts egy ismert jó Google-buildre:
+>
+> ```bash
+> pip uninstall -y mediapipe && pip install "mediapipe==0.10.21"
+> python -c "import mediapipe as mp; print(mp.__version__, hasattr(mp,'solutions'))"
+> # -> 0.10.21 True
+> ```
 
 ### macOS engedélyek (M1/M2 is)
 

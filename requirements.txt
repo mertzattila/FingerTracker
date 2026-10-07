@@ -1,7 +1,12 @@
 # FONTOS: a valódi Google MediaPipe a 0.10.x sorozatban van.
-# A PyPI-n létezik egy azonos nevű, NEM kapcsolódó "mediapipe" 1.x csomag is,
-# amiben NINCS mp.solutions -> ezért kerüljük a >=1.0 verziókat.
-# A solutions API-hoz Python 3.9-3.12 ajánlott (3.13/3.14 még nem támogatott).
+#
+# - A PyPI-n van egy azonos nevű 'mediapipe' 1.x csomag is, ami NEM a Google
+#   MediaPipe és nincs benne a 'solutions' API -> kerüljük a >=1.0 verziókat.
+# - Az ÚJABB 0.10.x buildekben (pl. 0.10.3x) az 'mp.solutions' már nem töltődik
+#   be automatikusan a sima 'import mediapipe as mp'-vel, ami a megszokott
+#   mintáknál AttributeError-t okoz. A finger_tracker.py ezt kezeli explicit
+#   almodul-importtal; ha mégis gond van, egy ismert jó verzió a 0.10.21.
+# - A solutions API-hoz Python 3.11 / 3.12 ajánlott (3.13/3.14 még nem jó).
 opencv-python>=4.8
-mediapipe>=0.10.14,<0.11
+mediapipe==0.10.21
 pyautogui>=0.9.54

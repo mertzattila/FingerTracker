@@ -21,8 +21,44 @@ import time
 from collections import deque
 
 import cv2
-import mediapipe as mp
 import pyautogui
+
+
+def _load_mediapipe_solutions():
+    """A MediaPipe `solutions` API betöltése verziótól függetlenül.
+
+    Az újabb MediaPipe buildekben (pl. 0.10.3x, 1.x) a `mp.solutions` már NEM
+    töltődik be automatikusan a `import mediapipe as mp`-vel, ezért a megszokott
+    `mp.solutions.hands` AttributeError-t ad. Itt több utat is megpróbálunk:
+
+    1. a klasszikus `mediapipe.solutions` (régebbi buildek),
+    2. az explicit `mediapipe.python.solutions` almodulok (újabb buildek).
+
+    Visszatér: (hands_module, drawing_utils_module).
+    """
+    # 1) Klasszikus út.
+    try:
+        import mediapipe as mp  # noqa: F401
+
+        if hasattr(mp, "solutions"):
+            return mp.solutions.hands, mp.solutions.drawing_utils
+    except Exception:
+        pass
+
+    # 2) Explicit almodul-import (az újabb buildeken ez működik).
+    try:
+        import mediapipe.python.solutions.hands as mp_hands
+        import mediapipe.python.solutions.drawing_utils as mp_draw
+
+        return mp_hands, mp_draw
+    except Exception as exc:  # pragma: no cover - környezetfüggő
+        raise ImportError(
+            "Nem sikerült betölteni a MediaPipe 'solutions' (Hands) API-t.\n"
+            "Valószínűleg nem kompatibilis MediaPipe build van telepítve.\n"
+            "Javasolt: Python 3.11/3.12 + a klasszikus solutions API-t tartalmazó\n"
+            "verzió, pl.:  pip install 'mediapipe==0.10.21'\n"
+            f"Eredeti hiba: {exc}"
+        ) from exc
 
 
 # --- Konfiguráció --------------------------------------------------------------
@@ -52,8 +88,7 @@ def main() -> None:
 
     screen_w, screen_h = pyautogui.size()
 
-    mp_hands = mp.solutions.hands
-    mp_draw = mp.solutions.drawing_utils
+    mp_hands, mp_draw = _load_mediapipe_solutions()
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
