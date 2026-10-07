@@ -23,12 +23,14 @@ Gesztusok (alap: a jobb kéz vezérel; lásd --hand):
   - Gyors LEGYINTÉS nyitott tenyérrel .. oldallapozás (balra/jobbra nyíl)
 
 Billentyűk a kameraablakon:
-  - 'k' .... virtuális billentyűzet be/ki
+  - 'k' .... virtuális billentyűzet be/ki (KÜLÖN, mozgatható/méretezhető ablak)
   - 'm' .... egérvezérlés be/ki (ha csak gépelni akarsz)
   - 'q' / ESC .... kilépés
 
-Virtuális billentyűzet használata: kapcsold be 'k'-val, célozz a mutatóujjaddal
-egy gombra, és egy hüvelyk-mutató csippentéssel "üsd le".
+Virtuális billentyűzet: a 'k'-val megnyílik egy ÖNÁLLÓ ablak, amit a képernyőn
+bárhova húzhatsz és átméretezhetsz (pl. a böngésző mellé). A kezeddel (egérmód)
+ráviszed a kurzort egy gombra, és egy hüvelyk-mutató CSIPPENTÉSSEL leütöd. A
+leütés az éppen fókuszban lévő alkalmazásba kerül.
 """
 
 from __future__ import annotations
@@ -284,15 +286,28 @@ def main() -> None:
                             last_swipe_time = now
                     prev_index_x = state.index_x
 
-                    # --- Virtuális billentyűzet elsőbbsége ------------------
+                    # --- Egérvezérlés -------------------------------------
+                    # A kurzort MINDIG mozgatjuk (hogy a billentyűzet célzása a
+                    # valódi kurzorpozícióra működjön). A KATTINTÁST azonban
+                    # elnyomjuk, ha a kurzor épp a billentyűzet egy gombja
+                    # fölött van — különben egy csippentés egyszerre kattintana
+                    # ÉS billentyűt is leütne (dupla művelet).
                     pinch_now = state.pinch_index < gestures.PINCH_THRESHOLD
-                    kb_captured = keyboard.update(pointer_px, pinch_now)
+                    cursor = pyautogui.position()
+                    over_key = keyboard.update((cursor.x, cursor.y), pinch_now)
 
-                    # --- Egérvezérlés (ha nem a billentyűzeten vagyunk) -----
-                    if mouse_enabled and not kb_captured:
-                        mouse.handle(gesture, state, now)
+                    if mouse_enabled:
+                        effective = gesture
+                        if over_key and gesture in (
+                            Gesture.LEFT_CLICK, Gesture.RIGHT_CLICK
+                        ):
+                            # Ne kattintson; csak kövesse a kurzort.
+                            effective = Gesture.MOVE
+                        mouse.handle(effective, state, now)
 
                     status = f"{label}: {gesture.name}"
+                    if keyboard.enabled:
+                        status += "  [KB]"
 
                     # Kéz kirajzolása.
                     mp_draw.draw_landmarks(frame, landmarks,
@@ -304,8 +319,10 @@ def main() -> None:
 
             prev_time = now
 
-            # Billentyűzet rárajzolása (ha be van kapcsolva).
-            keyboard.draw(frame, pointer_px)
+            # A tkinter billentyűzet-ablak pörgetése a FŐSZÁLON (macOS-barát).
+            # Ha nincs kéz a képen, akkor is pörgetni kell, hogy az ablak
+            # reszponzív maradjon (mozgatás/méretezés).
+            keyboard.pump()
 
             _draw_hud(frame, status, keyboard.enabled, mouse_enabled)
 
@@ -322,6 +339,7 @@ def main() -> None:
             elif key == ord("m"):
                 mouse_enabled = not mouse_enabled
 
+    keyboard.shutdown()
     cap.release()
     cv2.destroyAllWindows()
 
@@ -333,7 +351,9 @@ def _draw_hud(frame, status: str, kb_on: bool, mouse_on: bool) -> None:
                 0.7, (255, 255, 0), 2, cv2.LINE_AA)
 
     ms_txt = "BE" if mouse_on else "KI"
-    hud = f"AirControl  |  [m] Eger: {ms_txt}   [k] Billentyuzet   [q/ESC] Kilepes"
+    kb_txt = "BE" if kb_on else "KI"
+    hud = (f"AirControl  |  [m] Eger: {ms_txt}   [k] Billentyuzet: {kb_txt}"
+           f"   [q/ESC] Kilepes")
     cv2.putText(frame, hud, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX,
                 0.5, (200, 200, 200), 1, cv2.LINE_AA)
     # A billentyűk (m/k/q) csak akkor jutnak be, ha EZ az ablak van fókuszban.
@@ -341,7 +361,6 @@ def _draw_hud(frame, status: str, kb_on: bool, mouse_on: bool) -> None:
     cv2.putText(frame, "(gombok: kattints eloszor erre az ablakra)",
                 (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX,
                 0.45, (150, 150, 150), 1, cv2.LINE_AA)
-    _ = kb_on  # a billentyűzet-státuszt a HUD már nem írja ki külön
 
 
 if __name__ == "__main__":

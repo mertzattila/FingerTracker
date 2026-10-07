@@ -24,12 +24,17 @@ Az akciókat a [PyAutoGUI](https://pyautogui.readthedocs.io/) hajtja végre.
 | **Ököl** (minden ujj behajlítva) | fogd és vidd (drag): mozgasd, majd nyisd ki a kezed az elengedéshez |
 | Gyors **legyintés** nyitott tenyérrel | oldallapozás (balra/jobbra nyílbillentyű) |
 
-**Virtuális billentyűzet**
+**Virtuális billentyűzet (külön, mozgatható ablak)**
 
-- A kameraablakra kivetített QWERTY billentyűzet, `k` billentyűvel **be/ki**.
-- A **mutatóujjaddal célzol** egy gombra, és egy **csippentéssel leütöd**.
-- SPACE, Backspace és Enter is van. A leütés az éppen fókuszban lévő
-  alkalmazásba kerül (szövegszerkesztő, böngésző kereső stb.).
+- A `k` billentyűvel megnyílik egy **önálló billentyűzet-ablak**, amit a
+  képernyőn **bárhova húzhatsz és átméretezhetsz** (pl. a böngésző mellé).
+  Mindig felül marad, így böngészés közben is kéznél van.
+- A kezeddel (egérmódban) **ráviszed a kurzort** egy gombra, és egy
+  **csippentéssel leütöd**. A gombok egérrel is kattinthatók.
+- QWERTY + számsor, SPACE, Backspace, Enter. A leütés az éppen **fókuszban lévő
+  alkalmazásba** kerül (szövegszerkesztő, böngésző keresőmező stb.).
+- Amíg a kurzor egy billentyűzet-gomb fölött van, a csippentés **nem** vált ki
+  egérkattintást — csak a billentyűt üti le (nincs dupla művelet).
 
 **Egyéb**
 
@@ -112,13 +117,20 @@ Mutasd a kezed a kamerának, és használd a fenti gesztusokat. A kameraablakon
 mindig látszik, épp melyik gesztust ismeri fel.
 
 **Gépelés a virtuális billentyűzettel:**
-1. Kattints (vagy válaszd ki egérrel) a célmezőt, ahova gépelni szeretnél.
-2. Kapcsold be a billentyűzetet a `k` billentyűvel (a billentyűzet-ablak legyen
-   fókuszban a `k`-hoz; a leütések viszont az előző, fókuszált alkalmazásba
-   mennek).
-3. Célozz a mutatóujjaddal egy gombra, és **csippents** a leütéshez.
-4. Tipp: `m`-mel kikapcsolhatod az egérvezérlést, ha csak gépelni akarsz, hogy
-   a kurzor ne mozogjon közben.
+1. Kattints a kameraablakra, és nyomd meg a `k`-t → megnyílik a külön
+   billentyűzet-ablak. **Húzd oda és méretezd**, ahova kényelmes (pl. a
+   böngésző mellé/alá).
+2. Kattints a célmezőbe, ahova gépelni szeretnél (pl. böngésző keresőmező) —
+   így oda kerül a fókusz, a leütések ide fognak menni.
+3. A kezeddel vidd a **kurzort** egy billentyűzet-gombra, és **csippents** a
+   leütéshez. (A gombok egérrel is kattinthatók.)
+4. Tipp: `m`-mel kikapcsolhatod az egérvezérlést, ha csak gépelni akarsz —
+   de a billentyűzet célzásához az egérmód kell, mert a kurzor pozíciója
+   mutat a gombokra.
+
+> **macOS megjegyzés:** a billentyűzet külön ablaka és a leütések a főszálon
+> futnak, hogy M-chipes Macen stabil legyen (a tkinter + PyAutoGUI nem-fő
+> szálon összeomlana). Ezért a billentyűzet nyitva is folyamatosan reszponzív.
 
 Kilépés: `q` vagy `ESC`.
 
