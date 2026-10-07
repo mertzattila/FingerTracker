@@ -286,36 +286,21 @@ def main() -> None:
                             last_swipe_time = now
                     prev_index_x = state.index_x
 
-                    # --- Egérvezérlés -------------------------------------
-                    # A kurzort MINDIG mozgatjuk (hogy a billentyűzet célzása a
-                    # valódi kurzorpozícióra működjön).
-                    #
-                    # KULCSFONTOSSÁGÚ: amíg a kurzor a billentyűzet-ABLAK fölött
-                    # van, SEMMILYEN egérkattintást nem küldünk. Egy kattintás a
-                    # billentyűzet-ablakra ugyanis aktiválná azt az ablakot, és
-                    # elvenné a billentyűzet-fókuszt a céltól (ahova gépelni
-                    # akarsz) -> a leütések a semmibe mennének. A gomb
-                    # kiválasztása tiszta kurzorpozíció + csippentés alapján
-                    # történik (kattintás NÉLKÜL), amit a billentyűzet maga
-                    # dolgoz fel (pump), és a leütést a fókuszált appba küldi.
                     pinch_now = state.pinch_index < gestures.PINCH_THRESHOLD
-                    cursor = pyautogui.position()
-                    over_kb = keyboard.update((cursor.x, cursor.y), pinch_now)
 
-                    if mouse_enabled:
-                        effective = gesture
-                        if over_kb and gesture in (
-                            Gesture.LEFT_CLICK, Gesture.RIGHT_CLICK,
-                            Gesture.DRAG,
-                        ):
-                            # A billentyűzet-ablak fölött csak kövesse a kurzort,
-                            # soha ne kattintson/húzzon (nehogy fókuszt lopjon).
-                            effective = Gesture.MOVE
-                        mouse.handle(effective, state, now)
-
-                    status = f"{label}: {gesture.name}"
                     if keyboard.enabled:
-                        status += "  [KB]"
+                        # BILLENTYŰZET MÓD: az egér TELJESEN szünetel. A kéz a
+                        # billentyűzet saját jelölőjét mozgatja (a kéz képbeli
+                        # pozíciójából), és csippentésre az ott lévő gombot üti
+                        # le. SEMMILYEN egéresemény (mozgatás/kattintás) nem megy
+                        # ki -> a célmező fókusza megmarad, oda kerül a leütés.
+                        keyboard.update((state.index_x, state.index_y), pinch_now)
+                        status = f"{label}: BILLENTYUZET"
+                    else:
+                        # EGÉR MÓD.
+                        if mouse_enabled:
+                            mouse.handle(gesture, state, now)
+                        status = f"{label}: {gesture.name}"
 
                     # Kéz kirajzolása.
                     mp_draw.draw_landmarks(frame, landmarks,
@@ -365,12 +350,11 @@ def _draw_hud(frame, status: str, kb_on: bool, mouse_on: bool) -> None:
                 0.5, (200, 200, 200), 1, cv2.LINE_AA)
 
     if kb_on:
-        # A gépelés kulcsa: a billentyűzet megnyitása/kattintása elveszi a
-        # fókuszt, ezért a célmezőbe KATTINTS UTOLJÁRA, és a billentyűzetre
-        # soha ne kattints — csak vidd rá a kurzort és csippents.
+        # Billentyűzet módban az egér szünetel; a kéz a billentyűzet jelölőjét
+        # mozgatja, csippentés gépel. Nincs kattintás -> nincs fókuszvesztés.
         cv2.putText(frame,
-                    "Gepeles: 1) nyisd meg a billentyuzetet  2) kattints a "
-                    "celmezobe (ide megy a fokusz)  3) celozz + csippents",
+                    "BILLENTYUZET MOD: az eger szunetel. Mozgasd a kezed a "
+                    "billentyuzeten, es CSIPPENTS a gepeleshez.",
                     (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX,
                     0.45, (0, 220, 255), 1, cv2.LINE_AA)
     else:

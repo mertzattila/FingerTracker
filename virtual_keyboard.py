@@ -13,14 +13,19 @@ Előnyök:
     sarkánál MÉRETEZHETŐ, és odahúzható a böngésző mellé.
   - Mindig felül tartjuk (topmost), ha a platform támogatja.
 
-Célzás: a VALÓDI egérkurzor képernyő-pozíciójával mutatunk a gombokra (a kezed
-az egérmódban mozgatja a kurzort). A billentyűzetablak saját képernyő-pozícióját
-`cv2.getWindowImageRect`-tel kérdezzük le, így a kurzort a gombokhoz tudjuk
-rendelni akkor is, ha az ablakot elhúztad/átméretezted.
+Célzás: NEM a rendszer-egérkurzorral, hanem közvetlenül a KÉZ kamerabeli
+pozíciójával mozgatunk egy jelölőt a billentyűzet saját vásznán. Így a gépelés
+teljesen független az egértől: NINCS kattintás, tehát NINCS fókuszvesztés.
+
+Fókusz: a billentyűzet bekapcsolásakor (és a megnyitó ablak miatt) a célmező
+elveszítheti a fókuszt. Ezt macOS-en egy AppleScript hívással adjuk vissza a
+korábban aktív alkalmazásnak, hogy a leütések oda kerüljenek.
 """
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import time
 from dataclasses import dataclass
 
@@ -67,7 +72,7 @@ class VirtualKeyboard:
         self._keys: list[Key] = []
         self._last_press_time = 0.0
         self._hover_label: str | None = None
-        self._pointer_screen: tuple[int, int] | None = None
+        self._hand_norm: tuple[float, float] | None = None
         self._pinch = False
         self._build_layout()
 
@@ -78,41 +83,25 @@ class VirtualKeyboard:
         else:
             self._open()
 
-    def update(self, pointer_screen: tuple[int, int] | None, pinch: bool) -> bool:
-        """Átveszi a kurzor képernyő-pozícióját és a csippentés állapotát.
+    def update(self, hand_norm: tuple[float, float] | None, pinch: bool) -> None:
+        """A KÉZ normalizált (0..1) pozíciója a kameraképben + csippentés.
 
-        Visszatér: True, ha a kurzor a billentyűzet-ABLAK területén belül van
-        (nem csak egy gombon). A hívó ebből tudja, hogy EL KELL nyomnia minden
-        egérkattintást, nehogy a billentyűzet-ablakra kattintva elvegye a
-        billentyűzet-fókuszt a céltól (ahova gépelni akarsz).
+        FONTOS: itt NEM a rendszer-egérkurzort használjuk, hanem közvetlenül a
+        kéz pozícióját képezzük a billentyűzet saját vásznára. Így a gépelés
+        teljesen független az egértől: nincs kattintás, nincs fókuszvesztés.
         """
-        self._pointer_screen = pointer_screen
+        self._hand_norm = hand_norm
         self._pinch = pinch
-        if not self.enabled:
-            return False
-        return self.is_cursor_over_window()
-
-    def is_cursor_over_window(self) -> bool:
-        """Igaz, ha a kurzor a billentyűzet-ablak téglalapján belül van."""
-        if not self.enabled or self._pointer_screen is None:
-            return False
-        try:
-            x, y, w, h = cv2.getWindowImageRect(WINDOW_NAME)
-        except Exception:
-            return False
-        if w <= 0 or h <= 0:
-            return False
-        px, py = self._pointer_screen
-        return x <= px <= x + w and y <= py <= y + h
 
     def pump(self) -> None:
         """A fő ciklus hívja minden képkockában (főszálon): kirajzol + leüt."""
         if not self.enabled:
             return
 
-        # A billentyűzetablak képernyő-pozíciója és mérete, hogy a globális
-        # kurzort a gombokhoz tudjuk rendelni.
-        local = self._screen_to_board(self._pointer_screen)
+        # A KÉZ normalizált pozícióját (0..1) közvetlenül a billentyűzet saját
+        # vásznára képezzük. Nincs köze a rendszer-egérkurzorhoz -> nincs
+        # kattintás, nincs fókuszvesztés.
+        local = self._hand_to_board(self._hand_norm)
 
         self._hover_label = None
         if local is not None:
@@ -135,6 +124,10 @@ class VirtualKeyboard:
 
     # --- Ablak ---------------------------------------------------------------
     def _open(self) -> None:
+        # Jegyezzük meg, melyik app volt aktív (ahova gépelni akarsz), hogy a
+        # billentyűzet-ablak megnyitása után visszaadhassuk neki a fókuszt.
+        prev_app = _frontmost_app()
+
         cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(WINDOW_NAME, BOARD_W, BOARD_H)
         try:
@@ -150,6 +143,10 @@ class VirtualKeyboard:
             pass
         self.enabled = True
         self._render()
+
+        # A fókuszt adjuk vissza a korábbi appnak (ahova gépelni fogsz).
+        if prev_app:
+            _activate_app(prev_app)
 
     def _close(self) -> None:
         self.enabled = False
@@ -205,10 +202,16 @@ class VirtualKeyboard:
             cv2.putText(img, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX,
                         scale, (255, 255, 255), 2, cv2.LINE_AA)
 
+        # Jelölő: hol áll a KEZED a billentyűzeten (nem a rendszerkurzor).
+        local = self._hand_to_board(self._hand_norm)
+        if local is not None:
+            cv2.circle(img, local, 10, (0, 255, 0), 2)
+            cv2.circle(img, local, 2, (0, 255, 0), cv2.FILLED)
+
         cv2.putText(
             img,
-            "Vidd a kurzort egy gombra, es CSIPPENTS a leuteshez. "
-            "Az ablak mozgathato/merezheto.",
+            "Mozgasd a kezed a billentyuzeten, es CSIPPENTS a leuteshez. "
+            "(Nem kell az egerrel kattintani!)",
             (12, BOARD_H - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
             (150, 150, 150), 1, cv2.LINE_AA,
         )
@@ -218,24 +221,21 @@ class VirtualKeyboard:
             self.enabled = False
 
     # --- Koordináta-leképezés ------------------------------------------------
-    def _screen_to_board(self, pointer_screen):
-        """A globális kurzor-képernyőpozíciót a logikai vászon koordinátáira
-        képezi le, figyelembe véve az ablak aktuális helyét és méretét."""
-        if pointer_screen is None:
+    def _hand_to_board(self, hand_norm):
+        """A kéz normalizált (0..1) kamerapozícióját a logikai vászonra képezi.
+
+        Nincs szükség a rendszer-egérkurzorra vagy az ablak képernyő-helyére:
+        a kéz közvetlenül a billentyűzet-vásznon mozgat egy jelölőt. Egy kis
+        holtsávval könnyebb elérni a széleket.
+        """
+        if hand_norm is None:
             return None
-        try:
-            x, y, w, h = cv2.getWindowImageRect(WINDOW_NAME)
-        except Exception:
-            return None
-        if w <= 0 or h <= 0:
-            return None
-        px, py = pointer_screen
-        if not (x <= px <= x + w and y <= py <= y + h):
-            return None
-        # Az ablak tartalma a BOARD_W x BOARD_H vászon az ablakméretre skálázva.
-        bx = int((px - x) / w * BOARD_W)
-        by = int((py - y) / h * BOARD_H)
-        return bx, by
+        margin = 0.08
+        nx = (hand_norm[0] - margin) / (1.0 - 2 * margin)
+        ny = (hand_norm[1] - margin) / (1.0 - 2 * margin)
+        nx = max(0.0, min(1.0, nx))
+        ny = max(0.0, min(1.0, ny))
+        return int(nx * BOARD_W), int(ny * BOARD_H)
 
     def _press(self, label: str) -> None:
         """A tényleges billentyűleütés PyAutoGUI-val (a fókuszált appba)."""
@@ -247,3 +247,41 @@ class VirtualKeyboard:
             pyautogui.press("enter")
         else:
             pyautogui.typewrite(label.lower(), interval=0)
+
+
+# --- macOS fókuszkezelés (más platformon no-op) ----------------------------
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
+def _frontmost_app() -> str | None:
+    """Visszaadja az aktuálisan aktív (frontmost) alkalmazás nevét macOS-en.
+
+    Más platformon None-t ad (ott nincs rá szükség / nincs ez a probléma).
+    """
+    if not _is_macos():
+        return None
+    try:
+        out = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to get name of first '
+             'application process whose frontmost is true'],
+            capture_output=True, text=True, timeout=1.5,
+        )
+        name = out.stdout.strip()
+        return name or None
+    except Exception:
+        return None
+
+
+def _activate_app(app_name: str) -> None:
+    """Visszaadja a fókuszt a megadott nevű alkalmazásnak (macOS)."""
+    if not _is_macos() or not app_name:
+        return
+    try:
+        subprocess.run(
+            ["osascript", "-e", f'tell application "{app_name}" to activate'],
+            capture_output=True, text=True, timeout=1.5,
+        )
+    except Exception:
+        pass

@@ -121,28 +121,27 @@ python aircontrol.py
 Mutasd a kezed a kamerának, és használd a fenti gesztusokat. A kameraablakon
 mindig látszik, épp melyik gesztust ismeri fel.
 
-**Gépelés a virtuális billentyűzettel — FONTOS a sorrend!**
+**Gépelés a virtuális billentyűzettel**
 
-A billentyűzet úgy gépel, hogy a leütést az **éppen fókuszban lévő** ablakba
-küldi. Ezért a **fókusznak a célmezőn kell maradnia**. Az AirControl ezt úgy
-biztosítja, hogy **soha nem kattint a billentyűzet-ablakra** (amíg a kurzor a
-billentyűzet fölött van, minden egérkattintás el van nyomva — csak a kurzor
-mozog). A gombot a **kurzor + csippentés** választja ki, kattintás nélkül.
+A gépelés **teljesen független az egértől**, ezért nincs fókuszvesztés:
+amikor a billentyűzet be van kapcsolva, az **egérvezérlés szünetel**, és a
+**kezed közvetlenül egy jelölőt mozgat a billentyűzet vásznán** (a zöld kör).
+**Semmilyen egérkattintás nem történik** — így a célmező (ahova gépelsz)
+megtartja a fókuszt, és a leütések oda kerülnek.
 
-Neked egyetlen dologra kell figyelned: **a célmezőbe kattints UTOLJÁRA.**
+1. **Kattints a célmezőbe** egérmódban (kézzel: csippentés = kattintás), vagy
+   egyszerűen a trackpaddel — pl. böngésző keresőmező.
+2. Nyomd meg a `k`-t → megnyílik a billentyűzet-ablak. (macOS-en a fókuszt
+   automatikusan visszaadjuk a célmezőnek egy AppleScript hívással.)
+3. **Mozgasd a kezed** a billentyűzeten (a zöld jelölő követi), és a kívánt
+   gombnál **csippents** (hüvelyk + mutató). A betű a célmezőbe kerül.
 
-1. Nyomd meg a `k`-t → megnyílik a külön billentyűzet-ablak. **Húzd oda és
-   méretezd**, ahova kényelmes (pl. a böngésző mellé/alá).
-2. **Kattints a célmezőbe** (pl. böngésző keresőmező) — innentől ott a fókusz.
-3. A kezeddel vidd a **kurzort** egy billentyűzet-gombra, és **csippents**. A
-   betű a célmezőbe kerül, mert a billentyűzetre közben SOHA nem kattintasz.
-
-> Ha menet közben véletlenül rákattintanál a billentyűzet-ablakra (pl. elhúzni
-> akarod), utána **kattints vissza a célmezőbe**, mielőtt tovább gépelsz.
+> A billentyűzet-ablakot a címsoránál fogva **mozgathatod**, a sarkánál
+> **átméretezheted** (pl. a böngésző mellé). Mivel a célzás a kezedhez van
+> kötve (nem a rendszerkurzorhoz), az ablak helye nem befolyásolja a gépelést.
 
 > **macOS megjegyzés:** a billentyűzet egy külön **OpenCV**-ablak (nem tkinter),
 > ezért nem omlik össze az OpenCV-vel egy folyamatban, és nem kell hozzá Tk.
-> Az ablakot a címsoránál fogva mozgathatod, a sarkánál átméretezheted.
 
 Kilépés: `q` vagy `ESC`.
 
