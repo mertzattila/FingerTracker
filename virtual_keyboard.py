@@ -81,13 +81,29 @@ class VirtualKeyboard:
     def update(self, pointer_screen: tuple[int, int] | None, pinch: bool) -> bool:
         """Átveszi a kurzor képernyő-pozícióját és a csippentés állapotát.
 
-        Visszatér: True, ha a kurzor épp egy gomb fölött van.
+        Visszatér: True, ha a kurzor a billentyűzet-ABLAK területén belül van
+        (nem csak egy gombon). A hívó ebből tudja, hogy EL KELL nyomnia minden
+        egérkattintást, nehogy a billentyűzet-ablakra kattintva elvegye a
+        billentyűzet-fókuszt a céltól (ahova gépelni akarsz).
         """
         self._pointer_screen = pointer_screen
         self._pinch = pinch
         if not self.enabled:
             return False
-        return self._hover_label is not None
+        return self.is_cursor_over_window()
+
+    def is_cursor_over_window(self) -> bool:
+        """Igaz, ha a kurzor a billentyűzet-ablak téglalapján belül van."""
+        if not self.enabled or self._pointer_screen is None:
+            return False
+        try:
+            x, y, w, h = cv2.getWindowImageRect(WINDOW_NAME)
+        except Exception:
+            return False
+        if w <= 0 or h <= 0:
+            return False
+        px, py = self._pointer_screen
+        return x <= px <= x + w and y <= py <= y + h
 
     def pump(self) -> None:
         """A fő ciklus hívja minden képkockában (főszálon): kirajzol + leüt."""

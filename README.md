@@ -121,17 +121,24 @@ python aircontrol.py
 Mutasd a kezed a kamerának, és használd a fenti gesztusokat. A kameraablakon
 mindig látszik, épp melyik gesztust ismeri fel.
 
-**Gépelés a virtuális billentyűzettel:**
-1. Kattints a kameraablakra, és nyomd meg a `k`-t → megnyílik a külön
-   billentyűzet-ablak. **Húzd oda és méretezd**, ahova kényelmes (pl. a
-   böngésző mellé/alá).
-2. Kattints a célmezőbe, ahova gépelni szeretnél (pl. böngésző keresőmező) —
-   így oda kerül a fókusz, a leütések ide fognak menni.
-3. A kezeddel vidd a **kurzort** egy billentyűzet-gombra, és **csippents** a
-   leütéshez. (A gombok egérrel is kattinthatók.)
-4. Tipp: `m`-mel kikapcsolhatod az egérvezérlést, ha csak gépelni akarsz —
-   de a billentyűzet célzásához az egérmód kell, mert a kurzor pozíciója
-   mutat a gombokra.
+**Gépelés a virtuális billentyűzettel — FONTOS a sorrend!**
+
+A billentyűzet úgy gépel, hogy a leütést az **éppen fókuszban lévő** ablakba
+küldi. Ezért a **fókusznak a célmezőn kell maradnia**. Az AirControl ezt úgy
+biztosítja, hogy **soha nem kattint a billentyűzet-ablakra** (amíg a kurzor a
+billentyűzet fölött van, minden egérkattintás el van nyomva — csak a kurzor
+mozog). A gombot a **kurzor + csippentés** választja ki, kattintás nélkül.
+
+Neked egyetlen dologra kell figyelned: **a célmezőbe kattints UTOLJÁRA.**
+
+1. Nyomd meg a `k`-t → megnyílik a külön billentyűzet-ablak. **Húzd oda és
+   méretezd**, ahova kényelmes (pl. a böngésző mellé/alá).
+2. **Kattints a célmezőbe** (pl. böngésző keresőmező) — innentől ott a fókusz.
+3. A kezeddel vidd a **kurzort** egy billentyűzet-gombra, és **csippents**. A
+   betű a célmezőbe kerül, mert a billentyűzetre közben SOHA nem kattintasz.
+
+> Ha menet közben véletlenül rákattintanál a billentyűzet-ablakra (pl. elhúzni
+> akarod), utána **kattints vissza a célmezőbe**, mielőtt tovább gépelsz.
 
 > **macOS megjegyzés:** a billentyűzet egy külön **OpenCV**-ablak (nem tkinter),
 > ezért nem omlik össze az OpenCV-vel egy folyamatban, és nem kell hozzá Tk.

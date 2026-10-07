@@ -288,20 +288,28 @@ def main() -> None:
 
                     # --- Egérvezérlés -------------------------------------
                     # A kurzort MINDIG mozgatjuk (hogy a billentyűzet célzása a
-                    # valódi kurzorpozícióra működjön). A KATTINTÁST azonban
-                    # elnyomjuk, ha a kurzor épp a billentyűzet egy gombja
-                    # fölött van — különben egy csippentés egyszerre kattintana
-                    # ÉS billentyűt is leütne (dupla művelet).
+                    # valódi kurzorpozícióra működjön).
+                    #
+                    # KULCSFONTOSSÁGÚ: amíg a kurzor a billentyűzet-ABLAK fölött
+                    # van, SEMMILYEN egérkattintást nem küldünk. Egy kattintás a
+                    # billentyűzet-ablakra ugyanis aktiválná azt az ablakot, és
+                    # elvenné a billentyűzet-fókuszt a céltól (ahova gépelni
+                    # akarsz) -> a leütések a semmibe mennének. A gomb
+                    # kiválasztása tiszta kurzorpozíció + csippentés alapján
+                    # történik (kattintás NÉLKÜL), amit a billentyűzet maga
+                    # dolgoz fel (pump), és a leütést a fókuszált appba küldi.
                     pinch_now = state.pinch_index < gestures.PINCH_THRESHOLD
                     cursor = pyautogui.position()
-                    over_key = keyboard.update((cursor.x, cursor.y), pinch_now)
+                    over_kb = keyboard.update((cursor.x, cursor.y), pinch_now)
 
                     if mouse_enabled:
                         effective = gesture
-                        if over_key and gesture in (
-                            Gesture.LEFT_CLICK, Gesture.RIGHT_CLICK
+                        if over_kb and gesture in (
+                            Gesture.LEFT_CLICK, Gesture.RIGHT_CLICK,
+                            Gesture.DRAG,
                         ):
-                            # Ne kattintson; csak kövesse a kurzort.
+                            # A billentyűzet-ablak fölött csak kövesse a kurzort,
+                            # soha ne kattintson/húzzon (nehogy fókuszt lopjon).
                             effective = Gesture.MOVE
                         mouse.handle(effective, state, now)
 
@@ -355,11 +363,20 @@ def _draw_hud(frame, status: str, kb_on: bool, mouse_on: bool) -> None:
            f"   [q/ESC] Kilepes")
     cv2.putText(frame, hud, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX,
                 0.5, (200, 200, 200), 1, cv2.LINE_AA)
-    # A billentyűk (m/k/q) csak akkor jutnak be, ha EZ az ablak van fókuszban.
-    # Az egérvezérlés viszont fókusztól függetlenül, rendszerszinten működik.
-    cv2.putText(frame, "(gombok: kattints eloszor erre az ablakra)",
-                (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX,
-                0.45, (150, 150, 150), 1, cv2.LINE_AA)
+
+    if kb_on:
+        # A gépelés kulcsa: a billentyűzet megnyitása/kattintása elveszi a
+        # fókuszt, ezért a célmezőbe KATTINTS UTOLJÁRA, és a billentyűzetre
+        # soha ne kattints — csak vidd rá a kurzort és csippents.
+        cv2.putText(frame,
+                    "Gepeles: 1) nyisd meg a billentyuzetet  2) kattints a "
+                    "celmezobe (ide megy a fokusz)  3) celozz + csippents",
+                    (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45, (0, 220, 255), 1, cv2.LINE_AA)
+    else:
+        cv2.putText(frame, "(a gombok: kattints eloszor erre az ablakra)",
+                    (10, h - 32), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45, (150, 150, 150), 1, cv2.LINE_AA)
 
 
 if __name__ == "__main__":
