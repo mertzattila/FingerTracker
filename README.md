@@ -56,6 +56,26 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+**Tk (tkinter) a virtuális billentyűzethez.** A Homebrew `python@3.11` alapból
+**nem** tartalmazza a Tk-t, ezért a billentyűzet-ablak Tk nélkül nem nyílik meg
+(`ModuleNotFoundError: No module named '_tkinter'`). Telepítsd külön:
+
+```bash
+# macOS + Homebrew:
+brew install python-tk@3.11
+# Linux (Debian/Ubuntu):
+# sudo apt install python3-tk
+```
+
+Ellenőrzés:
+
+```bash
+python -c "import tkinter; print('tkinter OK', tkinter.TkVersion)"
+```
+
+> Tk nélkül is elindul az AirControl, és az **egér mód teljesen működik** — csak
+> a billentyűzet (`k`) nem nyílik meg, amíg a Tk-t nem telepíted.
+
 Ellenőrzés, hogy a **valódi** MediaPipe van-e fent:
 
 ```bash

@@ -19,9 +19,31 @@ az egérmódban mozgatja a kurzort), és csippentésre üt le a gomb.
 from __future__ import annotations
 
 import time
-import tkinter as tk
 
 import pyautogui
+
+# A tkinter (Tk) egyes Python-telepítéseknél hiányzik — pl. a Homebrew
+# python@3.11 alapból NEM hozza, csak a külön 'python-tk@3.11' csomaggal.
+# Ne hasaljon el az egész program az importnál: ha nincs Tk, az egér mód
+# továbbra is menjen, és csak a billentyűzet megnyitásakor jelezzük a hiányt.
+try:
+    import tkinter as tk
+    TK_AVAILABLE = True
+    _TK_IMPORT_ERROR: Exception | None = None
+except Exception as _exc:  # ModuleNotFoundError: _tkinter, stb.
+    tk = None  # type: ignore[assignment]
+    TK_AVAILABLE = False
+    _TK_IMPORT_ERROR = _exc
+
+
+_TK_HELP = (
+    "A virtuális billentyűzethez a Tk (tkinter) szükséges, ami ennél a\n"
+    "Python-telepítésnél hiányzik.\n"
+    "  macOS + Homebrew:  brew install python-tk@3.11\n"
+    "  (majd aktiváld újra a venv-et és indítsd újra az AirControl-t)\n"
+    "Linux (Debian/Ubuntu):  sudo apt install python3-tk\n"
+    "Az EGÉR MÓD a billentyűzet nélkül is teljesen működik."
+)
 
 
 ROWS = [
@@ -58,6 +80,9 @@ class VirtualKeyboard:
     def toggle(self) -> None:
         if self.enabled:
             self._close()
+        elif not TK_AVAILABLE:
+            # Nincs Tk: ne álljon le a program, csak jelezzünk érthetően.
+            print("\n[AirControl] " + _TK_HELP + "\n")
         else:
             self._open()
 
@@ -100,8 +125,8 @@ class VirtualKeyboard:
             # A tkinter eseményhurok egyszeri pörgetése (nem blokkol).
             root.update_idletasks()
             root.update()
-        except tk.TclError:
-            # Az ablakot bezárták (X). Takarítás.
+        except Exception:
+            # Az ablakot bezárták (X) vagy más Tk-hiba. Takarítás.
             self._root = None
             self._buttons = {}
             self.enabled = False
