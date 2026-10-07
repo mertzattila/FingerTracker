@@ -10,3 +10,7 @@
 opencv-python>=4.8
 mediapipe==0.10.21
 pyautogui>=0.9.54
+numpy>=1.24
+# Megjegyzés: a virtuális billentyűzet KÜLÖN OpenCV-ablakban jelenik meg
+# (nem tkinter), mert a tkinter + OpenCV egy folyamatban macOS-en összeomlik.
+# Így NINCS szükség a Tk-ra (python-tk) a billentyűzethez.

@@ -56,25 +56,10 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-**Tk (tkinter) a virtuális billentyűzethez.** A Homebrew `python@3.11` alapból
-**nem** tartalmazza a Tk-t, ezért a billentyűzet-ablak Tk nélkül nem nyílik meg
-(`ModuleNotFoundError: No module named '_tkinter'`). Telepítsd külön:
-
-```bash
-# macOS + Homebrew:
-brew install python-tk@3.11
-# Linux (Debian/Ubuntu):
-# sudo apt install python3-tk
-```
-
-Ellenőrzés:
-
-```bash
-python -c "import tkinter; print('tkinter OK', tkinter.TkVersion)"
-```
-
-> Tk nélkül is elindul az AirControl, és az **egér mód teljesen működik** — csak
-> a billentyűzet (`k`) nem nyílik meg, amíg a Tk-t nem telepíted.
+> **Nincs szükség Tk-ra (tkinter).** A virtuális billentyűzet KÜLÖN
+> OpenCV-ablakban jelenik meg, nem tkinterben — így nem kell `python-tk`, és
+> elkerüljük a tkinter+OpenCV macOS-összeomlást
+> (`NSApplication macOSVersion unrecognized selector`).
 
 Ellenőrzés, hogy a **valódi** MediaPipe van-e fent:
 
@@ -148,9 +133,9 @@ mindig látszik, épp melyik gesztust ismeri fel.
    de a billentyűzet célzásához az egérmód kell, mert a kurzor pozíciója
    mutat a gombokra.
 
-> **macOS megjegyzés:** a billentyűzet külön ablaka és a leütések a főszálon
-> futnak, hogy M-chipes Macen stabil legyen (a tkinter + PyAutoGUI nem-fő
-> szálon összeomlana). Ezért a billentyűzet nyitva is folyamatosan reszponzív.
+> **macOS megjegyzés:** a billentyűzet egy külön **OpenCV**-ablak (nem tkinter),
+> ezért nem omlik össze az OpenCV-vel egy folyamatban, és nem kell hozzá Tk.
+> Az ablakot a címsoránál fogva mozgathatod, a sarkánál átméretezheted.
 
 Kilépés: `q` vagy `ESC`.
 

@@ -1,50 +1,35 @@
 """
-AirControl — önálló, mozgatható/méretezhető virtuális billentyűzet (tkinter).
+AirControl — önálló virtuális billentyűzet KÜLÖN OpenCV-ablakban.
 
-A korábbi megoldás a billentyűzetet a kameraablakra rajzolta, ezért böngészés
-közben használhatatlan volt. Ez a verzió egy KÜLÖN, natív ablakot nyit, amit a
-képernyőn bárhova húzhatsz és átméretezhetsz (pl. a böngésző mellé).
+Miért nem tkinter? macOS-en (különösen M-chipen) a tkinter és az OpenCV
+`imshow` egy folyamatban ütközik (mindkettő NSApplication/Cocoa-alapú), és a
+Tk 8.6 egy új macOS-en nem létező szelektort hív -> azonnali összeomlás
+("NSApplication macOSVersion unrecognized selector"). Ezért a billentyűzetet
+is OpenCV-vel rajzoljuk, de EGY KÜLÖN ablakba (nem a kamera képére).
 
-FONTOS (macOS): a tkinter és a PyAutoGUI hívásokat a FŐSZÁLON kell futtatni,
-különben M-chipes Macen összeomlik ("TIS/TSM in non-main thread"). Ezért ez az
-osztály NEM indít saját szálat: a fő program (aircontrol.py) a főszálon tartja
-életben a tkinter ablakot, és minden képkockában meghívja a `pump()`-ot, ami
-egyszer pörgeti a tkinter eseményhurkot. A tényleges billentyűleütés is a
-főszálról, a `pump()`-ban történik.
+Előnyök:
+  - Nincs tkinter -> nincs NSApplication-ütközés, stabil M2 Macen.
+  - Külön `WINDOW_NORMAL` OpenCV-ablak: a címsoránál fogva MOZGATHATÓ, a
+    sarkánál MÉRETEZHETŐ, és odahúzható a böngésző mellé.
+  - Mindig felül tartjuk (topmost), ha a platform támogatja.
 
 Célzás: a VALÓDI egérkurzor képernyő-pozíciójával mutatunk a gombokra (a kezed
-az egérmódban mozgatja a kurzort), és csippentésre üt le a gomb.
+az egérmódban mozgatja a kurzort). A billentyűzetablak saját képernyő-pozícióját
+`cv2.getWindowImageRect`-tel kérdezzük le, így a kurzort a gombokhoz tudjuk
+rendelni akkor is, ha az ablakot elhúztad/átméretezted.
 """
 
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 
+import cv2
+import numpy as np
 import pyautogui
 
-# A tkinter (Tk) egyes Python-telepítéseknél hiányzik — pl. a Homebrew
-# python@3.11 alapból NEM hozza, csak a külön 'python-tk@3.11' csomaggal.
-# Ne hasaljon el az egész program az importnál: ha nincs Tk, az egér mód
-# továbbra is menjen, és csak a billentyűzet megnyitásakor jelezzük a hiányt.
-try:
-    import tkinter as tk
-    TK_AVAILABLE = True
-    _TK_IMPORT_ERROR: Exception | None = None
-except Exception as _exc:  # ModuleNotFoundError: _tkinter, stb.
-    tk = None  # type: ignore[assignment]
-    TK_AVAILABLE = False
-    _TK_IMPORT_ERROR = _exc
 
-
-_TK_HELP = (
-    "A virtuális billentyűzethez a Tk (tkinter) szükséges, ami ennél a\n"
-    "Python-telepítésnél hiányzik.\n"
-    "  macOS + Homebrew:  brew install python-tk@3.11\n"
-    "  (majd aktiváld újra a venv-et és indítsd újra az AirControl-t)\n"
-    "Linux (Debian/Ubuntu):  sudo apt install python3-tk\n"
-    "Az EGÉR MÓD a billentyűzet nélkül is teljesen működik."
-)
-
+WINDOW_NAME = "AirControl – Billentyuzet"
 
 ROWS = [
     list("1234567890"),
@@ -54,154 +39,187 @@ ROWS = [
     ["SPACE", "BKSP", "ENTER"],
 ]
 
-KEY_COOLDOWN = 0.5  # két leütés közti minimum idő (s), ismétlésvédelem
+KEY_COOLDOWN = 0.5  # két leütés közti minimum idő (s)
+
+# A billentyűzet-kép logikai mérete (az ablakot ettől függetlenül átméretezheted;
+# az OpenCV a WINDOW_NORMAL miatt skálázza a tartalmat az ablakmérethez).
+BOARD_W = 900
+BOARD_H = 340
+
+
+@dataclass
+class Key:
+    label: str
+    x: int
+    y: int
+    w: int
+    h: int
+
+    def contains(self, px: int, py: int) -> bool:
+        return self.x <= px <= self.x + self.w and self.y <= py <= self.y + self.h
 
 
 class VirtualKeyboard:
-    """Főszálon élő tkinter billentyűzet-ablak. Nem indít saját szálat.
-
-    Életciklus:
-      - toggle(): megnyitja/bezárja az ablakot (a főszálon).
-      - update(pointer_screen, pinch): a fő ciklus adja át a kurzor képernyő-
-        pozícióját és a csippentés állapotát (nem blokkol).
-      - pump(): a fő ciklus hívja minden képkockában; egyszer pörgeti a tkinter
-        eseményhurkot, frissíti a kiemelést, és csippentésre leüt.
-    """
+    """Külön OpenCV-ablakban megjelenő virtuális billentyűzet."""
 
     def __init__(self) -> None:
         self.enabled = False
-        self._root: tk.Tk | None = None
-        self._buttons: dict[str, tk.Button] = {}
+        self._keys: list[Key] = []
+        self._last_press_time = 0.0
+        self._hover_label: str | None = None
         self._pointer_screen: tuple[int, int] | None = None
         self._pinch = False
-        self._last_press_time = 0.0
+        self._build_layout()
 
     # --- A fő ciklus felől hívott API --------------------------------------
     def toggle(self) -> None:
         if self.enabled:
             self._close()
-        elif not TK_AVAILABLE:
-            # Nincs Tk: ne álljon le a program, csak jelezzünk érthetően.
-            print("\n[AirControl] " + _TK_HELP + "\n")
         else:
             self._open()
 
     def update(self, pointer_screen: tuple[int, int] | None, pinch: bool) -> bool:
         """Átveszi a kurzor képernyő-pozícióját és a csippentés állapotát.
 
-        Visszatér: True, ha a kurzor épp egy gomb fölött van (a hívó ebből
-        tudja, hogy "a billentyűzeten vagyunk").
+        Visszatér: True, ha a kurzor épp egy gomb fölött van.
         """
         self._pointer_screen = pointer_screen
         self._pinch = pinch
         if not self.enabled:
             return False
-        return self._button_at(pointer_screen) is not None if pointer_screen else False
+        return self._hover_label is not None
 
     def pump(self) -> None:
-        """Egyszer pörgeti a tkinter eseményhurkot + kiemelés + leütés.
-
-        A FŐSZÁLON kell hívni (minden képkockában). Ha az ablakot a felhasználó
-        az X-szel bezárta, ezt észleljük és letiltjuk magunkat.
-        """
-        root = self._root
-        if root is None or not self.enabled:
+        """A fő ciklus hívja minden képkockában (főszálon): kirajzol + leüt."""
+        if not self.enabled:
             return
 
-        try:
-            # Kurzor fölötti gomb kiemelése.
-            hovered = (self._button_at(self._pointer_screen)
-                       if self._pointer_screen else None)
-            for label, btn in self._buttons.items():
-                btn.configure(bg="#ff8c00" if label == hovered else "#3c3c3c")
+        # A billentyűzetablak képernyő-pozíciója és mérete, hogy a globális
+        # kurzort a gombokhoz tudjuk rendelni.
+        local = self._screen_to_board(self._pointer_screen)
 
-            # Csippentésre leütés (ismétlésvédelemmel) — főszálon, macOS-barát.
-            now = time.time()
-            if self._pinch and hovered and \
-                    (now - self._last_press_time) > KEY_COOLDOWN:
-                self._press(hovered)
-                self._last_press_time = now
+        self._hover_label = None
+        if local is not None:
+            for key in self._keys:
+                if key.contains(*local):
+                    self._hover_label = key.label
+                    break
 
-            # A tkinter eseményhurok egyszeri pörgetése (nem blokkol).
-            root.update_idletasks()
-            root.update()
-        except Exception:
-            # Az ablakot bezárták (X) vagy más Tk-hiba. Takarítás.
-            self._root = None
-            self._buttons = {}
-            self.enabled = False
+        # Csippentésre leütés (ismétlésvédelemmel).
+        now = time.time()
+        if self._pinch and self._hover_label and \
+                (now - self._last_press_time) > KEY_COOLDOWN:
+            self._press(self._hover_label)
+            self._last_press_time = now
+
+        self._render()
 
     def shutdown(self) -> None:
         self._close()
 
     # --- Ablak ---------------------------------------------------------------
     def _open(self) -> None:
-        root = tk.Tk()
-        self._root = root
-        root.title("AirControl – Billentyuzet")
-        root.configure(bg="#101010")
-        root.attributes("-topmost", True)   # mindig felül (a böngésző fölött)
-        root.geometry("860x320+120+460")    # kezdő méret+pozíció; húzható/méretezhető
-        root.minsize(420, 180)
-
-        for row in ROWS:
-            frame = tk.Frame(root, bg="#101010")
-            frame.pack(fill="both", expand=True, padx=4, pady=3)
-            for label in row:
-                text = {"SPACE": "Szokoz", "BKSP": "<--", "ENTER": "Enter"}.get(
-                    label, label
-                )
-                btn = tk.Button(
-                    frame, text=text, bg="#3c3c3c", fg="white",
-                    activebackground="#ff8c00", relief="raised", bd=1,
-                    font=("Helvetica", 16, "bold"),
-                    command=lambda l=label: self._press(l),  # egérrel is megy
-                )
-                # A SPACE/BKSP/ENTER szélesebb legyen.
-                expand_w = 4 if label == "SPACE" else 2 if label in ("BKSP", "ENTER") else 1
-                btn.pack(side="left", fill="both", expand=True, padx=2,
-                         ipadx=expand_w * 3, ipady=6)
-                self._buttons[label] = btn
-
-        tk.Label(
-            root,
-            text="Vidd a kurzort egy gombra (kezzel), es CSIPPENTS a leuteshez. "
-                 "Az ablak szabadon mozgathato es atmerezheto.",
-            bg="#101010", fg="#9a9a9a", font=("Helvetica", 10),
-        ).pack(fill="x", pady=(0, 4))
-
-        # Az X-gomb csak letiltja a billentyűzetet (nem állítja le a programot).
-        root.protocol("WM_DELETE_WINDOW", self._close)
+        cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(WINDOW_NAME, BOARD_W, BOARD_H)
+        try:
+            cv2.moveWindow(WINDOW_NAME, 120, 460)
+        except Exception:
+            pass
+        # Mindig felül, ha a backend támogatja.
+        try:
+            prop = getattr(cv2, "WND_PROP_TOPMOST", None)
+            if prop is not None:
+                cv2.setWindowProperty(WINDOW_NAME, prop, 1.0)
+        except Exception:
+            pass
         self.enabled = True
+        self._render()
 
     def _close(self) -> None:
         self.enabled = False
-        root = self._root
-        self._root = None
-        self._buttons = {}
-        if root is not None:
-            try:
-                root.destroy()
-            except Exception:
-                pass
+        self._hover_label = None
+        try:
+            cv2.destroyWindow(WINDOW_NAME)
+        except Exception:
+            pass
 
-    # --- Segédek ------------------------------------------------------------
-    def _button_at(self, pointer_screen) -> str | None:
-        """Melyik gomb van a megadott képernyő-pixel alatt (ha van)."""
-        if self._root is None or pointer_screen is None:
+    # --- Elrendezés és kirajzolás -------------------------------------------
+    def _build_layout(self) -> None:
+        """A gombok pozícióját a BOARD_W x BOARD_H logikai vászonra számolja."""
+        self._keys = []
+        pad = 8
+        row_h = (BOARD_H - 2 * pad) // len(ROWS)
+        for r, row in enumerate(ROWS):
+            weights = []
+            for label in row:
+                if label == "SPACE":
+                    weights.append(4.0)
+                elif label in ("BKSP", "ENTER"):
+                    weights.append(2.0)
+                else:
+                    weights.append(1.0)
+            total = sum(weights)
+            usable = BOARD_W - 2 * pad
+            x = pad
+            y = pad + r * row_h
+            for label, wgt in zip(row, weights):
+                kw = int(usable * (wgt / total))
+                self._keys.append(
+                    Key(label, x + 3, y + 3, kw - 6, row_h - 6)
+                )
+                x += kw
+
+    def _render(self) -> None:
+        """Kirajzolja a billentyűzetet a saját ablakba."""
+        img = np.full((BOARD_H, BOARD_W, 3), 16, dtype=np.uint8)
+        for key in self._keys:
+            is_hover = key.label == self._hover_label
+            bg = (0, 140, 255) if is_hover else (60, 60, 60)
+            cv2.rectangle(img, (key.x, key.y),
+                          (key.x + key.w, key.y + key.h), bg, cv2.FILLED)
+            cv2.rectangle(img, (key.x, key.y),
+                          (key.x + key.w, key.y + key.h), (200, 200, 200), 1)
+            text = {"SPACE": "Szokoz", "BKSP": "<--", "ENTER": "Enter"}.get(
+                key.label, key.label
+            )
+            scale = 0.8 if len(text) == 1 else 0.6
+            (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
+            tx = key.x + (key.w - tw) // 2
+            ty = key.y + (key.h + th) // 2
+            cv2.putText(img, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX,
+                        scale, (255, 255, 255), 2, cv2.LINE_AA)
+
+        cv2.putText(
+            img,
+            "Vidd a kurzort egy gombra, es CSIPPENTS a leuteshez. "
+            "Az ablak mozgathato/merezheto.",
+            (12, BOARD_H - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+            (150, 150, 150), 1, cv2.LINE_AA,
+        )
+        try:
+            cv2.imshow(WINDOW_NAME, img)
+        except Exception:
+            self.enabled = False
+
+    # --- Koordináta-leképezés ------------------------------------------------
+    def _screen_to_board(self, pointer_screen):
+        """A globális kurzor-képernyőpozíciót a logikai vászon koordinátáira
+        képezi le, figyelembe véve az ablak aktuális helyét és méretét."""
+        if pointer_screen is None:
+            return None
+        try:
+            x, y, w, h = cv2.getWindowImageRect(WINDOW_NAME)
+        except Exception:
+            return None
+        if w <= 0 or h <= 0:
             return None
         px, py = pointer_screen
-        for label, btn in self._buttons.items():
-            try:
-                x = btn.winfo_rootx()
-                y = btn.winfo_rooty()
-                w = btn.winfo_width()
-                h = btn.winfo_height()
-            except Exception:
-                continue
-            if x <= px <= x + w and y <= py <= y + h:
-                return label
-        return None
+        if not (x <= px <= x + w and y <= py <= y + h):
+            return None
+        # Az ablak tartalma a BOARD_W x BOARD_H vászon az ablakméretre skálázva.
+        bx = int((px - x) / w * BOARD_W)
+        by = int((py - y) / h * BOARD_H)
+        return bx, by
 
     def _press(self, label: str) -> None:
         """A tényleges billentyűleütés PyAutoGUI-val (a fókuszált appba)."""

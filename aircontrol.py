@@ -319,9 +319,8 @@ def main() -> None:
 
             prev_time = now
 
-            # A tkinter billentyűzet-ablak pörgetése a FŐSZÁLON (macOS-barát).
-            # Ha nincs kéz a képen, akkor is pörgetni kell, hogy az ablak
-            # reszponzív maradjon (mozgatás/méretezés).
+            # A (külön OpenCV-ablakban megjelenő) billentyűzet újrarajzolása.
+            # Ha nincs kéz a képen, akkor is hívjuk, hogy az ablak frissüljön.
             keyboard.pump()
 
             _draw_hud(frame, status, keyboard.enabled, mouse_enabled)
