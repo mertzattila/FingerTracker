@@ -1,3 +1,7 @@
+# FONTOS: a valódi Google MediaPipe a 0.10.x sorozatban van.
+# A PyPI-n létezik egy azonos nevű, NEM kapcsolódó "mediapipe" 1.x csomag is,
+# amiben NINCS mp.solutions -> ezért kerüljük a >=1.0 verziókat.
+# A solutions API-hoz Python 3.9-3.12 ajánlott (3.13/3.14 még nem támogatott).
 opencv-python>=4.8
-mediapipe>=0.10
+mediapipe>=0.10.14,<0.11
 pyautogui>=0.9.54

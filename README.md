@@ -19,11 +19,39 @@ segítségével odamozgatja az egérkurzort.
 
 ## Telepítés
 
+A MediaPipe `solutions` API **Python 3.9–3.12** verziókhoz érhető el (3.13/3.14
+még nem támogatott). Használj dedikált virtuális környezetet:
+
 ```bash
+# Python 3.11 ajánlott (macOS: brew install python@3.11)
+python3.11 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-> Megjegyzés: a MediaPipe Python 3.8–3.11 verziókat támogatja a legjobban.
+Ellenőrzés, hogy a **valódi** MediaPipe van-e fent:
+
+```bash
+python -c "import mediapipe as mp; print(mp.__version__, hasattr(mp, 'solutions'))"
+# várt kimenet:  0.10.x True
+```
+
+> **Gyakori hiba — `AttributeError: module 'mediapipe' has no attribute 'solutions'`**
+> Ezt szinte mindig két dolog okozza:
+> 1. **Túl új Python** (3.13/3.14) — hozz létre venv-et Python 3.11-gyel.
+> 2. **Rossz csomag** — a PyPI-n létezik egy azonos nevű `mediapipe` **1.x**
+>    csomag, ami NEM a Google MediaPipe és nincs benne a `solutions` API.
+>    A `requirements.txt` ezért `>=0.10.14,<0.11`-re pinneli a verziót.
+>    Ha már feltelepült a rossz verzió:
+>    `pip uninstall -y mediapipe && pip install "mediapipe>=0.10.14,<0.11"`.
+
+### macOS engedélyek (M1/M2 is)
+
+- **Kamera**: első futtatáskor a rendszer engedélyt kér.
+- **Kisegítő lehetőségek**: a PyAutoGUI csak akkor tudja mozgatni a kurzort, ha
+  a Terminál/iTerm engedélyt kap itt: Rendszerbeállítások → Adatvédelem és
+  biztonság → Kisegítő lehetőségek.
 
 ## Használat
 
