@@ -16,6 +16,7 @@ Kilépés: 'q' billentyű vagy ESC a megjelenített ablakon.
 
 from __future__ import annotations
 
+import argparse
 import math
 import time
 from collections import deque
@@ -80,8 +81,66 @@ CLICK_COOLDOWN = 0.4
 # a kép középső részére szűkítjük, és azt feszítjük ki a teljes képernyőre.
 FRAME_MARGIN = 0.15
 
+# Melyik kezet kövessük: "Right", "Left", vagy "Any" (bármelyik).
+# FIGYELEM: a MediaPipe címkéi a TÜKRÖZÖTT képre vonatkoznak. A kódban a képet
+# tükrözzük (flip), így a MediaPipe "Right" címkéje felel meg a valódi jobb
+# kezednek. Ha fordítva működne, állítsd "Left"-re, vagy használd az "Any"-t.
+TRACKED_HAND = "Right"
+
+
+def _is_frame_usable(frame) -> bool:
+    """Igaz, ha a képkocka nem (majdnem) teljesen fekete.
+
+    macOS-en a Continuity Camera (iPhone) néha megnyílik, de fekete képet ad.
+    Egy ilyen kamerát át akarunk ugrani, ezért megnézzük van-e tényleges fény.
+    """
+    if frame is None or frame.size == 0:
+        return False
+    return float(frame.mean()) > 5.0
+
+
+def _open_camera(preferred: int | None):
+    """Használható webkamera megnyitása.
+
+    Ha `preferred` meg van adva, csak azt próbáljuk. Egyébként végigpróbáljuk a
+    0..5 indexeket, és az elsőt fogadjuk el, amelyik NEM fekete képet ad.
+    """
+    candidates = [preferred] if preferred is not None else list(range(6))
+    for idx in candidates:
+        cap = cv2.VideoCapture(idx)
+        if not cap.isOpened():
+            cap.release()
+            continue
+        # Olvassunk pár képkockát, mert az első(k) gyakran üresek.
+        usable = False
+        for _ in range(10):
+            ok, frame = cap.read()
+            if ok and _is_frame_usable(frame):
+                usable = True
+                break
+            time.sleep(0.05)
+        if usable:
+            print(f"[FingerTracker] Kamera megnyitva, index={idx}")
+            return cap, idx
+        cap.release()
+    return None, None
+
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Kézkövetéses egérvezérlés.")
+    parser.add_argument(
+        "--camera",
+        type=int,
+        default=None,
+        help="Kamera index (alapból automatikus keresés 0..5 között).",
+    )
+    parser.add_argument(
+        "--hand",
+        choices=["Right", "Left", "Any"],
+        default=TRACKED_HAND,
+        help='Melyik kezet kövesse (alap: "%(default)s").',
+    )
+    args = parser.parse_args()
     # PyAutoGUI biztonsági beállítások.
     pyautogui.FAILSAFE = True   # bal felső sarokba húzott egér megszakítja
     pyautogui.PAUSE = 0.0       # ne lassítsa a mozgatást beépített szünet
@@ -90,9 +149,14 @@ def main() -> None:
 
     mp_hands, mp_draw = _load_mediapipe_solutions()
 
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        raise RuntimeError("Nem sikerült megnyitni a webkamerát (index 0).")
+    cap, cam_idx = _open_camera(args.camera)
+    if cap is None:
+        raise RuntimeError(
+            "Nem találtam használható (nem fekete) webkamerát a 0..5 indexeken.\n"
+            "macOS-en gyakori ok a Continuity Camera (iPhone), ami fekete képet ad.\n"
+            "Tipp: kapcsold ki az iPhone-t kameraként, vagy add meg kézzel az\n"
+            "indexet, pl.:  python finger_tracker.py --camera 1"
+        )
 
     # Mozgóátlaghoz tartó a legutóbbi (x, y) képernyő-koordinátákkal.
     xs: deque[float] = deque(maxlen=SMOOTHING_WINDOW)
@@ -122,7 +186,7 @@ def main() -> None:
             rgb.flags.writeable = False
             results = hands.process(rgb)
 
-            status_text = "Nincs jobb kez a kepen"
+            status_text = "Nincs kez a kepen"
 
             if results.multi_hand_landmarks and results.multi_handedness:
                 for landmarks, handedness in zip(
@@ -131,11 +195,11 @@ def main() -> None:
                     label = handedness.classification[0].label  # "Left" / "Right"
 
                     # A kép tükrözése miatt a MediaPipe "Right" címkéje felel meg
-                    # a felhasználó valódi jobb kezének.
-                    if label != "Right":
+                    # a valódi jobb kéznek. Az "Any" bármelyik kezet elfogadja.
+                    if args.hand != "Any" and label != args.hand:
                         continue
 
-                    status_text = "Jobb kez kovetve"
+                    status_text = f"Kez kovetve ({label})"
 
                     index_tip = landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
                     thumb_tip = landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]

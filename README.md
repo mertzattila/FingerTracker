@@ -77,6 +77,30 @@ Mutasd a **jobb kezedet** a kamerának, mozgasd a mutatóujjaddal a kurzort,
 és érintsd össze a mutató- és hüvelykujjad a kattintáshoz.
 Kilépés: `q` vagy `ESC` a megjelenített ablakon.
 
+### Parancssori opciók
+
+```bash
+python finger_tracker.py --camera 1      # adott kamera index használata
+python finger_tracker.py --hand Any      # bármelyik kéz vezérelhet
+python finger_tracker.py --hand Left     # a bal kéz kövesse
+```
+
+- `--camera N`: ha nem adod meg, a program automatikusan végigpróbálja a 0..5
+  indexeket, és az első **nem fekete** képet adó kamerát használja.
+- `--hand`: `Right` (alap), `Left` vagy `Any`.
+
+### macOS: fekete a kamerakép?
+
+Ha a kameraablak fekete, és a logban `Continuity Camera` szerepel, a macOS az
+**iPhone-odat** nyitotta meg kameraként. Megoldás:
+
+- Kapcsold ki az iPhone-t kameraként (iPhone: Beállítások → Általános → AirPlay
+  és Folytonosság → Folytonossági kamera KI), **vagy**
+- add meg kézzel a beépített kamerát, pl. `python finger_tracker.py --camera 1`.
+
+Az automatikus keresés a fekete képet adó kamerákat kihagyja, de a kézi index
+mindig a legbiztosabb.
+
 ## Hangolható paraméterek (`finger_tracker.py` tetején)
 
 | Paraméter | Jelentés |
