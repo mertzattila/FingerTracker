@@ -1,21 +1,37 @@
 # FingerTracker
 
-Kézkövetéses egérvezérlés webkamerával. A program a [MediaPipe](https://developers.google.com/mediapipe)
-kézdetektorával követi a **jobb kezedet**, a mutatóujjad hegyének pozícióját a
-képernyőd felbontására skálázza, és a [PyAutoGUI](https://pyautogui.readthedocs.io/)
-segítségével odamozgatja az egérkurzort.
+Kézvezérelt **egér + virtuális billentyűzet** webkamerával. A program a
+[MediaPipe](https://developers.google.com/mediapipe) kézdetektorával követi a
+kezed, gesztusokból teljes értékű egérként viselkedik, és egy be/ki kapcsolható
+virtuális billentyűzetet vetít a kameraablakra, amin a kezeddel gépelhetsz.
+Az akciókat a [PyAutoGUI](https://pyautogui.readthedocs.io/) hajtja végre.
 
 ## Funkciók
 
-- **Jobb kéz követése** a webkameráról (MediaPipe + OpenCV).
-- **Kurzormozgatás**: a mutatóujj hegye vezérli az egeret, a képernyő teljes
-  felbontására skálázva.
-- **Simítás (mozgóátlag)**: a kurzor pozícióját egy csúszó ablakos átlag
-  tompítja, így nem remeg.
-- **Kattintás csippentéssel**: ha a mutató- és hüvelykujj hegye összeér (a
-  kézmérethez normalizált távolságuk a küszöb alá esik), a program egy bal
-  egérkattintást szimulál. A trigger él-vezérelt és van benne várakozási idő,
-  így egy csippentés egy kattintást jelent.
+**Gesztus-egér**
+
+| Gesztus | Művelet |
+|---|---|
+| Csak a **mutatóujj** fent | kurzor mozgatása (simítva, mozgóátlaggal) |
+| **Hüvelyk + mutató** csippentés | bal kattintás |
+| **Hüvelyk + középső** csippentés | jobb kattintás |
+| **Mutató + középső** együtt fent | függőleges görgetés (a kéz fel/le mozgása) |
+| **Ököl** (minden ujj behajlítva) | fogd és vidd (drag): mozgasd, majd nyisd ki a kezed az elengedéshez |
+| Gyors **legyintés** nyitott tenyérrel | oldallapozás (balra/jobbra nyílbillentyű) |
+
+**Virtuális billentyűzet**
+
+- A kameraablakra kivetített QWERTY billentyűzet, `k` billentyűvel **be/ki**.
+- A **mutatóujjaddal célzol** egy gombra, és egy **csippentéssel leütöd**.
+- SPACE, Backspace és Enter is van. A leütés az éppen fókuszban lévő
+  alkalmazásba kerül (szövegszerkesztő, böngésző kereső stb.).
+
+**Egyéb**
+
+- **Simítás (mozgóátlag)** a kurzoron, hogy ne remegjen.
+- Minden kattintás él-vezérelt + cooldownos (egy gesztus = egy kattintás).
+- Billentyűk a kameraablakon: `k` billentyűzet be/ki, `m` egér be/ki,
+  `q`/`ESC` kilépés.
 
 ## Telepítés
 
@@ -73,9 +89,19 @@ python -c "import mediapipe as mp; print(mp.__version__, hasattr(mp, 'solutions'
 python finger_tracker.py
 ```
 
-Mutasd a **jobb kezedet** a kamerának, mozgasd a mutatóujjaddal a kurzort,
-és érintsd össze a mutató- és hüvelykujjad a kattintáshoz.
-Kilépés: `q` vagy `ESC` a megjelenített ablakon.
+Mutasd a kezed a kamerának, és használd a fenti gesztusokat. A kameraablakon
+mindig látszik, épp melyik gesztust ismeri fel.
+
+**Gépelés a virtuális billentyűzettel:**
+1. Kattints (vagy válaszd ki egérrel) a célmezőt, ahova gépelni szeretnél.
+2. Kapcsold be a billentyűzetet a `k` billentyűvel (a billentyűzet-ablak legyen
+   fókuszban a `k`-hoz; a leütések viszont az előző, fókuszált alkalmazásba
+   mennek).
+3. Célozz a mutatóujjaddal egy gombra, és **csippents** a leütéshez.
+4. Tipp: `m`-mel kikapcsolhatod az egérvezérlést, ha csak gépelni akarsz, hogy
+   a kurzor ne mozogjon közben.
+
+Kilépés: `q` vagy `ESC`.
 
 ### Parancssori opciók
 
@@ -83,11 +109,13 @@ Kilépés: `q` vagy `ESC` a megjelenített ablakon.
 python finger_tracker.py --camera 1      # adott kamera index használata
 python finger_tracker.py --hand Any      # bármelyik kéz vezérelhet
 python finger_tracker.py --hand Left     # a bal kéz kövesse
+python finger_tracker.py --keyboard      # billentyűzet indításkor bekapcsolva
 ```
 
 - `--camera N`: ha nem adod meg, a program automatikusan végigpróbálja a 0..5
   indexeket, és az első **nem fekete** képet adó kamerát használja.
 - `--hand`: `Right` (alap), `Left` vagy `Any`.
+- `--keyboard`: a virtuális billentyűzet már indításkor bekapcsolva.
 
 ### macOS: fekete a kamerakép?
 
@@ -101,14 +129,36 @@ Ha a kameraablak fekete, és a logban `Continuity Camera` szerepel, a macOS az
 Az automatikus keresés a fekete képet adó kamerákat kihagyja, de a kézi index
 mindig a legbiztosabb.
 
+## Felépítés
+
+| Fájl | Szerep |
+|---|---|
+| `finger_tracker.py` | Fő program: kamera, fő ciklus, HUD, billentyűzetkapcsolók. |
+| `gestures.py` | Kéz-landmarkokból gesztusfelismerés (tiszta logika). |
+| `mouse_controller.py` | Gesztus → egérakció (mozgatás, kattintás, görgetés, drag). |
+| `virtual_keyboard.py` | A kivetített virtuális billentyűzet. |
+| `test_gestures.py` | Offline tesztek a gesztuslogikára (kamera nélkül). |
+
 ## Hangolható paraméterek (`finger_tracker.py` tetején)
 
 | Paraméter | Jelentés |
 |---|---|
 | `SMOOTHING_WINDOW` | Hány legutóbbi pozíciót átlagoljon a simítás. Nagyobb = simább, de "lustább". |
-| `PINCH_THRESHOLD` | A csippentés küszöbe (kézmérethez normalizált távolság). |
 | `CLICK_COOLDOWN` | Két kattintás közti minimális idő (s). |
+| `SCROLL_SENSITIVITY` | A görgetés erőssége (nagyobb = gyorsabb). |
 | `FRAME_MARGIN` | A kép szélén hagyott holtsáv aránya a kényelmesebb mozgástartományhoz. |
+| `SWIPE_SPEED` | Mekkora vízszintes sebességtől számít legyintésnek (lapozás). |
+| `SWIPE_COOLDOWN` | Két lapozás közti minimális idő (s). |
+| `gestures.PINCH_THRESHOLD` | A csippentés küszöbe (kézmérethez normalizált távolság). |
+
+## Tesztek
+
+A gesztuslogika kamera nélkül is tesztelhető:
+
+```bash
+python test_gestures.py
+# vagy: pip install pytest && pytest
+```
 
 ## Biztonság
 

@@ -1,28 +1,40 @@
 """
-FingerTracker
-=============
+FingerTracker — kézvezérelt egér + virtuális billentyűzet
+==========================================================
 
-A webkamera képéből MediaPipe-pal követi a JOBB kezet, a mutatóujj hegyének
-koordinátáit a képernyő felbontására skálázza, és PyAutoGUI-val oda mozgatja
-az egérkurzort. A kurzor remegését mozgóátlag (exponenciális simítás) tompítja.
+A webkamera képéből MediaPipe-pal követi a kezed, és egy teljes értékű,
+gesztus-alapú egérként viselkedik. Emellett egy be/ki kapcsolható virtuális
+billentyűzetet is kivetít a kameraablakra, amin a kezeddel tudsz gépelni.
 
-Ha a mutató- és a hüvelykujj hegye összeér (a köztük lévő, kézmérethez
-normalizált távolság egy küszöb alá csökken), a program bal egérkattintást
-szimulál. A "csippentés" él-triggerelt: egy összeérintés egyetlen kattintást
-vált ki, nem folyamatos kattintássorozatot.
+Gesztusok (alap: a jobb kéz vezérel; lásd --hand):
+  - Csak a MUTATÓUJJ fent ............. kurzor mozgatása
+  - Hüvelyk + mutató CSIPPENTÉS ....... bal kattintás
+  - Hüvelyk + középső CSIPPENTÉS ...... jobb kattintás
+  - MUTATÓ + KÖZÉPSŐ együtt fent ...... függőleges görgetés (a kéz fel/le)
+  - ÖKÖL (minden ujj behajlítva) ...... fogd és vidd (drag): mozgasd, majd nyisd
+  - Gyors LEGYINTÉS nyitott tenyérrel .. oldallapozás (balra/jobbra nyíl)
 
-Kilépés: 'q' billentyű vagy ESC a megjelenített ablakon.
+Billentyűk a kameraablakon:
+  - 'k' .... virtuális billentyűzet be/ki
+  - 'm' .... egérvezérlés be/ki (ha csak gépelni akarsz)
+  - 'q' / ESC .... kilépés
+
+Virtuális billentyűzet használata: kapcsold be 'k'-val, célozz a mutatóujjaddal
+egy gombra, és egy hüvelyk-mutató csippentéssel "üsd le".
 """
 
 from __future__ import annotations
 
 import argparse
-import math
 import time
-from collections import deque
 
 import cv2
 import pyautogui
+
+import gestures
+from gestures import Gesture
+from mouse_controller import MouseController
+from virtual_keyboard import VirtualKeyboard
 
 
 def _load_mediapipe_solutions():
@@ -37,7 +49,6 @@ def _load_mediapipe_solutions():
 
     Visszatér: (hands_module, drawing_utils_module).
     """
-    # 1) Klasszikus út.
     try:
         import mediapipe as mp  # noqa: F401
 
@@ -46,7 +57,6 @@ def _load_mediapipe_solutions():
     except Exception:
         pass
 
-    # 2) Explicit almodul-import (az újabb buildeken ez működik).
     try:
         import mediapipe.python.solutions.hands as mp_hands
         import mediapipe.python.solutions.drawing_utils as mp_draw
@@ -64,35 +74,22 @@ def _load_mediapipe_solutions():
 
 # --- Konfiguráció --------------------------------------------------------------
 
-# A simítás mértéke: hány legutóbbi pozíciót átlagoljunk a mozgóátlaghoz.
-SMOOTHING_WINDOW = 5
+SMOOTHING_WINDOW = 5        # mozgóátlag ablakmérete a kurzor simításához
+CLICK_COOLDOWN = 0.4        # két kattintás közti minimum idő (s)
+SCROLL_SENSITIVITY = 60     # görgetés erőssége (nagyobb = gyorsabb)
+FRAME_MARGIN = 0.15         # holtsáv a kép szélén a kényelmesebb tartományhoz
+TRACKED_HAND = "Right"      # "Right" | "Left" | "Any"
 
-# A csippentés küszöbe. A mutató- és hüvelykujj hegyének távolságát a
-# kéz méretéhez (csukló -> középső ujj töve) normalizáljuk, így a küszöb
-# független attól, milyen messze van a kéz a kameratól.
-PINCH_THRESHOLD = 0.35
-
-# Két kattintás között eltelő minimális idő (másodperc), hogy egy hosszabb
-# csippentés ne okozzon kattintás-áradatot.
-CLICK_COOLDOWN = 0.4
-
-# A képernyő szélei felé hagyott "holtsáv" aránya. A kézzel kényelmetlen
-# pontosan a kamera képének a sarkáig elérni, ezért a kéz mozgástartományát
-# a kép középső részére szűkítjük, és azt feszítjük ki a teljes képernyőre.
-FRAME_MARGIN = 0.15
-
-# Melyik kezet kövessük: "Right", "Left", vagy "Any" (bármelyik).
-# FIGYELEM: a MediaPipe címkéi a TÜKRÖZÖTT képre vonatkoznak. A kódban a képet
-# tükrözzük (flip), így a MediaPipe "Right" címkéje felel meg a valódi jobb
-# kezednek. Ha fordítva működne, állítsd "Left"-re, vagy használd az "Any"-t.
-TRACKED_HAND = "Right"
+# Swipe (legyintés) felismerés: ha a mutatóujj vízszintes sebessége (normalizált
+# egység / másodperc) ezt meghaladja nyitott tenyérrel, lapozásnak vesszük.
+SWIPE_SPEED = 1.8
+SWIPE_COOLDOWN = 0.8        # két lapozás közti minimum idő (s)
 
 
 def _is_frame_usable(frame) -> bool:
     """Igaz, ha a képkocka nem (majdnem) teljesen fekete.
 
     macOS-en a Continuity Camera (iPhone) néha megnyílik, de fekete képet ad.
-    Egy ilyen kamerát át akarunk ugrani, ezért megnézzük van-e tényleges fény.
     """
     if frame is None or frame.size == 0:
         return False
@@ -100,18 +97,13 @@ def _is_frame_usable(frame) -> bool:
 
 
 def _open_camera(preferred: int | None):
-    """Használható webkamera megnyitása.
-
-    Ha `preferred` meg van adva, csak azt próbáljuk. Egyébként végigpróbáljuk a
-    0..5 indexeket, és az elsőt fogadjuk el, amelyik NEM fekete képet ad.
-    """
+    """Használható (nem fekete) webkamera megnyitása 0..5 indexek között."""
     candidates = [preferred] if preferred is not None else list(range(6))
     for idx in candidates:
         cap = cv2.VideoCapture(idx)
         if not cap.isOpened():
             cap.release()
             continue
-        # Olvassunk pár képkockát, mert az első(k) gyakran üresek.
         usable = False
         for _ in range(10):
             ok, frame = cap.read()
@@ -127,29 +119,25 @@ def _open_camera(preferred: int | None):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Kézkövetéses egérvezérlés.")
-    parser.add_argument(
-        "--camera",
-        type=int,
-        default=None,
-        help="Kamera index (alapból automatikus keresés 0..5 között).",
+    parser = argparse.ArgumentParser(
+        description="Kézvezérelt egér + virtuális billentyűzet."
     )
-    parser.add_argument(
-        "--hand",
-        choices=["Right", "Left", "Any"],
-        default=TRACKED_HAND,
-        help='Melyik kezet kövesse (alap: "%(default)s").',
-    )
+    parser.add_argument("--camera", type=int, default=None,
+                        help="Kamera index (alapból automatikus keresés 0..5).")
+    parser.add_argument("--hand", choices=["Right", "Left", "Any"],
+                        default=TRACKED_HAND,
+                        help='Melyik kezet kövesse (alap: "%(default)s").')
+    parser.add_argument("--keyboard", action="store_true",
+                        help="A virtuális billentyűzet indításkor bekapcsolva.")
     args = parser.parse_args()
-    # PyAutoGUI biztonsági beállítások.
-    pyautogui.FAILSAFE = True   # bal felső sarokba húzott egér megszakítja
-    pyautogui.PAUSE = 0.0       # ne lassítsa a mozgatást beépített szünet
 
+    pyautogui.FAILSAFE = True
+    pyautogui.PAUSE = 0.0
     screen_w, screen_h = pyautogui.size()
 
     mp_hands, mp_draw = _load_mediapipe_solutions()
 
-    cap, cam_idx = _open_camera(args.camera)
+    cap, _ = _open_camera(args.camera)
     if cap is None:
         raise RuntimeError(
             "Nem találtam használható (nem fekete) webkamerát a 0..5 indexeken.\n"
@@ -158,12 +146,22 @@ def main() -> None:
             "indexet, pl.:  python finger_tracker.py --camera 1"
         )
 
-    # Mozgóátlaghoz tartó a legutóbbi (x, y) képernyő-koordinátákkal.
-    xs: deque[float] = deque(maxlen=SMOOTHING_WINDOW)
-    ys: deque[float] = deque(maxlen=SMOOTHING_WINDOW)
+    # Állapot.
+    mouse = MouseController(
+        screen_w, screen_h,
+        smoothing_window=SMOOTHING_WINDOW,
+        click_cooldown=CLICK_COOLDOWN,
+        scroll_sensitivity=SCROLL_SENSITIVITY,
+        frame_margin=FRAME_MARGIN,
+    )
+    last_swipe_time = 0.0
+    prev_index_x: float | None = None
+    prev_time = time.time()
 
-    last_click_time = 0.0
-    pinching = False  # az előző képkockán össze volt-e érintve a két ujj
+    keyboard = VirtualKeyboard()
+    if args.keyboard:
+        keyboard.toggle()
+    mouse_enabled = True
 
     with mp_hands.Hands(
         static_image_mode=False,
@@ -177,127 +175,98 @@ def main() -> None:
             if not ok:
                 break
 
-            # Tükrözés, hogy a kameraképen a mozgás természetes irányú legyen.
             frame = cv2.flip(frame, 1)
             h, w = frame.shape[:2]
 
-            # MediaPipe RGB-t vár, OpenCV BGR-t ad.
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             rgb.flags.writeable = False
             results = hands.process(rgb)
 
-            status_text = "Nincs kez a kepen"
+            status = "Nincs kez a kepen"
+            pointer_px: tuple[int, int] | None = None
+            gesture = Gesture.NONE
+
+            now = time.time()
+            dt = max(1e-3, now - prev_time)
 
             if results.multi_hand_landmarks and results.multi_handedness:
                 for landmarks, handedness in zip(
                     results.multi_hand_landmarks, results.multi_handedness
                 ):
-                    label = handedness.classification[0].label  # "Left" / "Right"
-
-                    # A kép tükrözése miatt a MediaPipe "Right" címkéje felel meg
-                    # a valódi jobb kéznek. Az "Any" bármelyik kezet elfogadja.
+                    label = handedness.classification[0].label
                     if args.hand != "Any" and label != args.hand:
                         continue
 
-                    status_text = f"Kez kovetve ({label})"
+                    state = gestures.analyze_hand(landmarks, label)
+                    gesture = gestures.classify_gesture(state)
 
-                    index_tip = landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-                    thumb_tip = landmarks.landmark[mp_hands.HandLandmark.THUMB_TIP]
-                    wrist = landmarks.landmark[mp_hands.HandLandmark.WRIST]
-                    middle_mcp = landmarks.landmark[
-                        mp_hands.HandLandmark.MIDDLE_FINGER_MCP
-                    ]
+                    ix = int(state.index_x * w)
+                    iy = int(state.index_y * h)
+                    pointer_px = (ix, iy)
 
-                    # --- Kurzor mozgatása -------------------------------------
-                    # A mutatóujj hegyének normalizált (0..1) koordinátáit a
-                    # holtsávval leszűkített tartományból a teljes képernyőre
-                    # skálázzuk.
-                    nx = _remap(index_tip.x, FRAME_MARGIN, 1.0 - FRAME_MARGIN)
-                    ny = _remap(index_tip.y, FRAME_MARGIN, 1.0 - FRAME_MARGIN)
+                    # Swipe (legyintés) felismerés nyitott tenyérnél.
+                    if prev_index_x is not None and state.num_fingers_up >= 4:
+                        vx = (state.index_x - prev_index_x) / dt
+                        if abs(vx) > SWIPE_SPEED and \
+                                (now - last_swipe_time) > SWIPE_COOLDOWN:
+                            if vx > 0:
+                                pyautogui.press("right")
+                                gesture = Gesture.SWIPE_RIGHT
+                            else:
+                                pyautogui.press("left")
+                                gesture = Gesture.SWIPE_LEFT
+                            last_swipe_time = now
+                    prev_index_x = state.index_x
 
-                    target_x = nx * screen_w
-                    target_y = ny * screen_h
+                    # --- Virtuális billentyűzet elsőbbsége ------------------
+                    pinch_now = state.pinch_index < gestures.PINCH_THRESHOLD
+                    kb_captured = keyboard.update(pointer_px, pinch_now)
 
-                    xs.append(target_x)
-                    ys.append(target_y)
+                    # --- Egérvezérlés (ha nem a billentyűzeten vagyunk) -----
+                    if mouse_enabled and not kb_captured:
+                        mouse.handle(gesture, state, now)
 
-                    # Mozgóátlag (egyszerű, csúszó ablakos) a remegés ellen.
-                    smooth_x = sum(xs) / len(xs)
-                    smooth_y = sum(ys) / len(ys)
+                    status = f"{label}: {gesture.name}"
 
-                    pyautogui.moveTo(smooth_x, smooth_y)
+                    # Kéz kirajzolása.
+                    mp_draw.draw_landmarks(frame, landmarks,
+                                           mp_hands.HAND_CONNECTIONS)
+                    cv2.circle(frame, (ix, iy), 9, (0, 255, 0), cv2.FILLED)
+                    break
+            else:
+                prev_index_x = None
 
-                    # --- Csippentés / kattintás -------------------------------
-                    pinch_dist = _distance(index_tip, thumb_tip)
-                    hand_size = _distance(wrist, middle_mcp)
-                    # Normalizált távolság: független a kamera távolságtól.
-                    norm_dist = pinch_dist / hand_size if hand_size > 1e-6 else 1.0
+            prev_time = now
 
-                    now = time.time()
-                    if norm_dist < PINCH_THRESHOLD:
-                        status_text = "Csippentes (kattintas)"
-                        # Él-trigger: csak akkor kattintunk, ha az előző
-                        # képkockán még NEM volt összeérintve a két ujj.
-                        if not pinching and (now - last_click_time) > CLICK_COOLDOWN:
-                            pyautogui.click()
-                            last_click_time = now
-                        pinching = True
-                    else:
-                        pinching = False
+            # Billentyűzet rárajzolása (ha be van kapcsolva).
+            keyboard.draw(frame, pointer_px)
 
-                    # --- Kirajzolás a visszajelzéshez -------------------------
-                    mp_draw.draw_landmarks(
-                        frame, landmarks, mp_hands.HAND_CONNECTIONS
-                    )
-                    ix, iy = int(index_tip.x * w), int(index_tip.y * h)
-                    tx, ty = int(thumb_tip.x * w), int(thumb_tip.y * h)
-                    color = (0, 0, 255) if norm_dist < PINCH_THRESHOLD else (0, 255, 0)
-                    cv2.circle(frame, (ix, iy), 10, color, cv2.FILLED)
-                    cv2.line(frame, (ix, iy), (tx, ty), color, 2)
-
-                    break  # csak egy (jobb) kézzel foglalkozunk
-
-            cv2.putText(
-                frame,
-                status_text,
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 0),
-                2,
-                cv2.LINE_AA,
-            )
-            cv2.putText(
-                frame,
-                "Kilepes: 'q' vagy ESC",
-                (10, h - 15),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (200, 200, 200),
-                1,
-                cv2.LINE_AA,
-            )
+            _draw_hud(frame, status, keyboard.enabled, mouse_enabled)
 
             cv2.imshow("FingerTracker", frame)
             key = cv2.waitKey(1) & 0xFF
-            if key == ord("q") or key == 27:  # 'q' vagy ESC
+            if key == ord("q") or key == 27:
                 break
+            elif key == ord("k"):
+                keyboard.toggle()
+            elif key == ord("m"):
+                mouse_enabled = not mouse_enabled
 
     cap.release()
     cv2.destroyAllWindows()
 
 
-def _distance(a, b) -> float:
-    """Euklideszi távolság két MediaPipe landmark között (normalizált térben)."""
-    return math.hypot(a.x - b.x, a.y - b.y)
+def _draw_hud(frame, status: str, kb_on: bool, mouse_on: bool) -> None:
+    """Állapotsáv és súgó kirajzolása a kép tetejére/aljára."""
+    h, w = frame.shape[:2]
+    cv2.putText(frame, status, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                0.7, (255, 255, 0), 2, cv2.LINE_AA)
 
-
-def _remap(value: float, lo: float, hi: float) -> float:
-    """A [lo, hi] tartományba eső értéket [0, 1]-re skálázza, és levágja."""
-    if hi <= lo:
-        return value
-    scaled = (value - lo) / (hi - lo)
-    return max(0.0, min(1.0, scaled))
+    kb_txt = "BE" if kb_on else "KI"
+    ms_txt = "BE" if mouse_on else "KI"
+    hud = f"[k] Billentyuzet: {kb_txt}   [m] Eger: {ms_txt}   [q/ESC] Kilepes"
+    cv2.putText(frame, hud, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX,
+                0.55, (200, 200, 200), 1, cv2.LINE_AA)
 
 
 if __name__ == "__main__":
